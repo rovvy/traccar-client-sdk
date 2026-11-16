@@ -25,7 +25,7 @@ import kotlinx.coroutines.launch
 class ForegroundServiceHolder(
     scope: ComponentCoroutineScope,
     context: Context,
-    state: StateFlow<State>,
+    private val state: StateFlow<State>,
 ) : SignalSource {
 
     override val signals: Flow<Signal> = emptyFlow()
@@ -52,6 +52,8 @@ class ForegroundServiceHolder(
     }
 
     private fun stop() {
+        // tracking off: the app's text goes; a new config (the scope ends, tracking stays on) keeps it for the new service
+        if (!state.value.enabled) TrackerService.clearText()
         appContext.stopService(Intent(appContext, TrackerService::class.java))
     }
 }
@@ -80,10 +82,11 @@ class TrackerService : Service() {
 
     override fun onDestroy() {
         Log.log("Service destroyed")
-        // after this no update can show a notification: none is left once tracking stopped
+        // after this no update can show a notification; one posted just before (Android removes the foreground
+        // notification before onDestroy) is removed here, so none is left once the service is gone
         synchronized(lock) {
             if (running === this) running = null
-            text = null
+            getSystemService<NotificationManager>()?.cancel(NOTIFICATION_ID)
         }
         serviceScope.cancel()
         super.onDestroy()
@@ -125,22 +128,30 @@ class TrackerService : Service() {
         private val lock = Any()
         /** The service while it runs in the foreground; an update shows only then. */
         private var running: TrackerService? = null
-        /** The app's title and text (updateTrackerNotification), kept while the service runs. */
+        /** The app's title and text (updateTrackerNotification), kept while tracking is on, also across a new config. */
         private var text: Pair<String?, String>? = null
 
         /**
          * Shows [title] and [body] in the tracking notification instead of the config's fixed text, until tracking
          * stops; the service uses them too when it builds its notification again. The whole text is shown, also on
          * the lock screen; a tap opens the app. True when shown; false when the tracking service is not running
-         * (nothing is kept, so an update that crosses a stop never shows later) or notifications are not allowed.
+         * (nothing is kept, so an update that crosses a stop never shows later), notifications are not allowed, or
+         * the rider swiped the notification away (Android 14 allows it; it stays away, the text is kept for later).
          */
         fun update(context: Context, title: String?, body: String): Boolean = synchronized(lock) {
             val service = running ?: return@synchronized false
             text = title to body
             if (!hasNotificationPermission(context)) return@synchronized false
             val manager = context.getSystemService<NotificationManager>() ?: return@synchronized false
+            if (manager.activeNotifications.none { it.id == NOTIFICATION_ID }) return@synchronized false
             manager.notify(NOTIFICATION_ID, build(service, title, body))
             true
+        }
+
+        /** Tracking stops: the app's text goes, and no update shows from now on (the service is about to end). */
+        internal fun clearText() = synchronized(lock) {
+            text = null
+            running = null
         }
 
         private fun build(context: Context, title: String?, body: String): Notification {

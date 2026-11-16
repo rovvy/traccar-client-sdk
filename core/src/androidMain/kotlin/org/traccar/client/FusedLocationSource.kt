@@ -34,7 +34,6 @@ class FusedLocationSource(
     override val positions = MutableSharedFlow<Position>(extraBufferCapacity = 8)
 
     private var callback: LocationCallback? = null
-    private var currentLocationToken: CancellationTokenSource? = null
 
     init {
         scope.observeState(state, State::locationMode, inactive = LocationMode.Off) { mode ->
@@ -97,27 +96,23 @@ class FusedLocationSource(
         callback = null
     }
 
+    // Each request has its own token: a new one (a heartbeat tick) never cancels one still running (an SOS, the
+    // final fix before a stop), whose caller would then wait forever. Each ends by itself after LOCATION_FETCH_TIMEOUT.
     private suspend fun awaitCurrentLocation(): Location? {
-        currentLocationToken?.cancel()
         val token = CancellationTokenSource()
-        currentLocationToken = token
         val request = CurrentLocationRequest.Builder()
             .setPriority(Priority.PRIORITY_HIGH_ACCURACY)
             .setDurationMillis(LOCATION_FETCH_TIMEOUT.inWholeMilliseconds)
             .build()
-        return try {
-            suspendCancellableCoroutine { continuation ->
-                client.getCurrentLocation(request, token.token)
-                    .addOnSuccessListener {
-                        if (continuation.isActive) continuation.resume(it)
-                    }
-                    .addOnFailureListener {
-                        if (continuation.isActive) continuation.resume(null)
-                    }
-                continuation.invokeOnCancellation { token.cancel() }
-            }
-        } finally {
-            if (currentLocationToken === token) currentLocationToken = null
+        return suspendCancellableCoroutine { continuation ->
+            client.getCurrentLocation(request, token.token)
+                .addOnSuccessListener {
+                    if (continuation.isActive) continuation.resume(it)
+                }
+                .addOnFailureListener {
+                    if (continuation.isActive) continuation.resume(null)
+                }
+            continuation.invokeOnCancellation { token.cancel() }
         }
     }
 

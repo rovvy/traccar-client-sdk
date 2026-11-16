@@ -115,7 +115,7 @@ class TrackerStatus {
     this.lastUploadTime,
     this.lastUploadCode,
     this.lastSentTime,
-    required this.pending,
+    this.pending,
   });
 
   factory TrackerStatus.fromMap(Map<Object?, Object?> m) => TrackerStatus(
@@ -127,7 +127,7 @@ class TrackerStatus {
         lastUploadTime: (m['lastUploadTime'] as num?)?.toInt(),
         lastUploadCode: (m['lastUploadCode'] as num?)?.toInt(),
         lastSentTime: (m['lastSentTime'] as num?)?.toInt(),
-        pending: (m['pending'] as num?)?.toInt() ?? 0,
+        pending: (m['pending'] as num?)?.toInt(),
       );
 
   /// Tracking is on.
@@ -148,8 +148,9 @@ class TrackerStatus {
   /// The newest upload the server took (2xx).
   final int? lastSentTime;
 
-  /// Positions kept on the phone that the server has not taken yet.
-  final int pending;
+  /// Positions kept on the phone that the server has not taken yet; null
+  /// until the SDK counted its queue.
+  final int? pending;
 }
 
 /// Entry point for the Traccar Client SDK Flutter plugin.

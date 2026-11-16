@@ -47,6 +47,8 @@ class Tracker internal constructor(
     suspend fun clearLogs() = Log.store?.clear()
 
     suspend fun updateConfig(newConfig: Config): Tracker = sharedMutex.withLock {
+        // the same config: nothing to rebuild (a rebuild stops and restarts the whole pipeline)
+        if (newConfig == config && sharedTrackerInstance === this) return@withLock this
         componentScope.coroutineContext.job.cancelAndJoin()
         sharedTrackerInstance = null
         bootstrap(newConfig)

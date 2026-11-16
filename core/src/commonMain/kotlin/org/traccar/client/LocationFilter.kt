@@ -77,8 +77,8 @@ class LocationFilter(
         /**
          * The platform is asked for a fix every interval, and the filter keeps a fix once an interval has passed.
          * A fix that comes a little early (timing jitter) would miss the filter and the next kept one would come a
-         * whole interval later, doubling the gap. A tenth of the interval, at most one second, is accepted early.
+         * whole interval later, doubling the gap. A tenth of the interval, at most five seconds, is accepted early.
          */
-        fun intervalTolerance(config: LocationConfig): Long = (config.intervalSeconds * 100L).coerceAtMost(1000L)
+        fun intervalTolerance(config: LocationConfig): Long = (config.intervalSeconds * 100L).coerceAtMost(5000L)
     }
 }

@@ -9,6 +9,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.traccar.client.db.Database
 import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -20,6 +21,10 @@ class TrackerStatusTest {
 
     @AfterTest
     fun close() = drivers.forEach { it.close() }
+
+    // the status is one per process: other tests leave theirs behind
+    @BeforeTest
+    fun reset() = resetStatus()
 
     /** A kept position shows as the newest one and waits in the queue until the upload goes through. */
     @Test
@@ -55,12 +60,12 @@ class TrackerStatusTest {
             scope = backgroundScope,
             now = { testScheduler.currentTime },
         )
-        runCurrent()
+        waitFor { trackerStatus.value.pending == 0 }
         assertTrue(trackerStatus.value.enabled, "on")
-        positions.emit(Position(latitude = 45.8, longitude = 24.15, accuracy = 5.0, time = 1_000))
+        positions.emit(Position(latitude = 46.1, longitude = 24.15, accuracy = 5.0, time = 1_000))
         waitFor { trackerStatus.value.pending == 1 }
         assertEquals(1_000, trackerStatus.value.lastPositionTime)
-        assertEquals(45.8, trackerStatus.value.lastLatitude)
+        assertEquals(46.1, trackerStatus.value.lastLatitude)
         release.complete(Unit)
         waitFor { trackerStatus.value.pending == 0 }
     }

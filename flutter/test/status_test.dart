@@ -5,7 +5,7 @@ import 'package:traccar_client_sdk/traccar_client_sdk.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('status events from Android become TrackerStatus values, missing fields as null or 0', () async {
+  test('status events from Android become TrackerStatus values, missing fields as null or false', () async {
     const channel = EventChannel('traccar_client_sdk/status');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockStreamHandler(
       channel,
@@ -31,6 +31,6 @@ void main() {
     expect(events[0].pending, 2);
     expect(events[1].enabled, isFalse);
     expect(events[1].lastSentTime, isNull);
-    expect(events[1].pending, 0);
+    expect(events[1].pending, isNull);
   });
 }

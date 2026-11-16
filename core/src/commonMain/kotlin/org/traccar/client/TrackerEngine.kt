@@ -45,8 +45,12 @@ class TrackerEngine internal constructor(
     private val pipelineWakeUp = Channel<Unit>(Channel.CONFLATED)
     private val heartbeatPositions = MutableSharedFlow<Position>(extraBufferCapacity = 4)
     private val lastOutput = MutableStateFlow(now())
-    /** The newest fix from the location source, kept or not: an active heartbeat sends it when it is new enough. */
-    private val lastIncoming = MutableStateFlow<Position?>(null)
+    /**
+     * The newest fix from the location source, kept or not, and when it arrived (the engine's clock, not the fix's
+     * own time, which may come from another clock): an active heartbeat sends it when it arrived recently.
+     */
+    private val lastIncoming = MutableStateFlow<Pair<Position, Long>?>(null)
+    private val pendingMutex = Mutex()
 
     init {
         scope.launch { signalSources.map { it.signals }.merge().collect { handle(it) } }
@@ -58,7 +62,8 @@ class TrackerEngine internal constructor(
         scope.launch { refreshPending() }
     }
 
-    private suspend fun refreshPending() {
+    // one at a time: two counts published out of order would show an old number
+    private suspend fun refreshPending() = pendingMutex.withLock {
         val pending = queue.count()
         updateStatus { it.copy(pending = pending) }
     }
@@ -99,7 +104,8 @@ class TrackerEngine internal constructor(
         if (silent in 0 until activeHeartbeat.inWholeMilliseconds * 9 / 10) return
         Log.log("ActiveHeartbeat: nothing sent for ${silent / 1000}s")
         // a fix the filter dropped since the last output costs no GPS; otherwise ask for one, never waiting forever
-        val recent = lastIncoming.value?.takeIf { it.time > lastOutput.value }
+        val recent = lastIncoming.value
+            ?.takeIf { (_, at) -> at > lastOutput.value && now() - at <= RECENT_FIX.inWholeMilliseconds }?.first
         val position = recent ?: try {
             withTimeoutOrNull(LOCATION_FETCH_TIMEOUT + 5.seconds) { locationSource.fetchOnce() }
         } catch (e: CancellationException) {
@@ -117,7 +123,7 @@ class TrackerEngine internal constructor(
     }
 
     private suspend fun pipelineLoop() {
-        merge(locationSource.positions.onEach { lastIncoming.value = it }, heartbeatPositions).collect { incoming ->
+        merge(locationSource.positions.onEach { lastIncoming.value = it to now() }, heartbeatPositions).collect { incoming ->
             if (!stateStore.state.value.enabled) return@collect
             var current: Position? = incoming
             for (processor in processors) {
@@ -161,5 +167,10 @@ class TrackerEngine internal constructor(
                 }
             }
         }
+    }
+
+    private companion object {
+        /** A dropped fix older than this is not sent as a heartbeat: a new fix is asked for instead. */
+        val RECENT_FIX = 1.minutes
     }
 }

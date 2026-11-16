@@ -127,6 +127,20 @@ class ActiveHeartbeatTest {
         assertEquals(0, f.fetches, "the newest dropped fix is sent, no extra GPS fix")
     }
 
+    /** The newest dropped fix arrived more than a minute ago (GPS stopped, a tunnel): a new fix is asked for, not the old one sent. */
+    @Test
+    fun anOldDroppedFixIsNotSent() = runTest {
+        val f = engine(State(enabled = true, paused = false), 5.minutes)
+        fixNow(f)
+        advanceTimeBy(1.minutes)
+        fixNow(f) // dropped, and the last one before GPS goes quiet
+        advanceTimeBy(4.minutes)
+        tick(f)
+        assertEquals(1, f.fetches, "a new fix")
+        assertEquals(2, f.sent.size)
+        assertEquals(5.minutes.inWholeMilliseconds, f.sent[1].time, "the new fix, not the one from 4 minutes ago")
+    }
+
     /** No fix at all while moving: the tick asks for one. */
     @Test
     fun noFixAtAllAsksForOne() = runTest {

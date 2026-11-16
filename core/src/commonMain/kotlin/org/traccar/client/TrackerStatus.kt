@@ -23,8 +23,8 @@ data class TrackerStatus(
     val lastUploadCode: Int? = null,
     /** The newest upload the server took (2xx). */
     val lastSentTime: Long? = null,
-    /** Positions kept on the phone that the server has not taken yet. */
-    val pending: Int = 0,
+    /** Positions kept on the phone that the server has not taken yet; null until the queue was counted. */
+    val pending: Int? = null,
 )
 
 private val status = MutableStateFlow(TrackerStatus())
@@ -33,3 +33,8 @@ private val status = MutableStateFlow(TrackerStatus())
 val trackerStatus: StateFlow<TrackerStatus> = status.asStateFlow()
 
 internal fun updateStatus(transform: (TrackerStatus) -> TrackerStatus) = status.update(transform)
+
+/** Tests: back to the start. */
+internal fun resetStatus() {
+    status.value = TrackerStatus()
+}
