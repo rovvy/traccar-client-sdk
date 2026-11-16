@@ -22,6 +22,13 @@ data class Config(
     val batchSize: Int = 1,
     /** Android: on the first start, open the battery optimization list when the app is not exempt. */
     val promptBatteryOptimization: Boolean = true,
+    /**
+     * Fewer fixes while the battery is low (Android): the SDK picks a profile by itself from the battery level, charging
+     * and battery saver ([chooseBatteryProfile]) and runs with its interval and heartbeat ([applied]). Empty: off.
+     */
+    val batteryProfiles: List<BatteryProfile> = emptyList(),
+    /** The profile in use (its name), set by the SDK when it switches; null: the config's own interval and heartbeat. */
+    val activeProfile: String? = null,
 ) {
     constructor(serverUrl: String, deviceId: String) : this(serverUrl, deviceId, LocationConfig())
 }

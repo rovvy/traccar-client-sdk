@@ -19,6 +19,7 @@ import org.traccar.client.Config
 import org.traccar.client.LocationConfig
 import org.traccar.client.NotificationConfig
 import org.traccar.client.requestPosition
+import org.traccar.client.BatteryProfile
 import org.traccar.client.sharedTracker
 import org.traccar.client.startTracking
 import org.traccar.client.trackerStatus
@@ -62,6 +63,7 @@ class TraccarClientSdkPlugin :
                                 "waitingForNetwork" to s.waitingForNetwork,
                                 "noAnswerSince" to s.noAnswerSince,
                                 "pending" to s.pending,
+                                "profile" to s.profile,
                             ),
                         )
                     }
@@ -82,6 +84,7 @@ class TraccarClientSdkPlugin :
                 null
             }
             "setConfig" -> scope.launchHandler(result) {
+                // the battery profile in use stays (Tracker.updateConfig keeps it)
                 sharedTracker()!!.updateConfig(parseConfig(call.arguments as Map<*, *>))
                 null
             }
@@ -185,6 +188,18 @@ class TraccarClientSdkPlugin :
             // fork options; missing (an older Dart side) means the SDK's defaults
             batchSize = (args["batchSize"] as? Number)?.toInt() ?: 1,
             promptBatteryOptimization = args["promptBatteryOptimization"] as? Boolean ?: true,
+            batteryProfiles = (args["batteryProfiles"] as? List<*>)?.mapNotNull { p ->
+                (p as? Map<*, *>)?.let {
+                    BatteryProfile(
+                        name = it["name"] as String,
+                        enterPercent = (it["enterPercent"] as Number).toInt(),
+                        leavePercent = (it["leavePercent"] as Number).toInt(),
+                        intervalSeconds = (it["intervalSeconds"] as Number).toInt(),
+                        heartbeatIntervalSeconds = (it["heartbeatIntervalSeconds"] as Number).toInt(),
+                        withBatterySaver = it["withBatterySaver"] as? Boolean ?: false,
+                    )
+                }
+            } ?: emptyList(),
         )
     }
 }

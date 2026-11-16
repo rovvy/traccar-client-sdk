@@ -49,6 +49,10 @@ class ForegroundServiceHolder(
     }
 
     private fun start() {
+        // a new config while tracking (a battery profile switch, the app's setConfig): the service kept running, and
+        // starting it again from the background is refused on Android 12+ unless the app is exempt from battery
+        // optimization
+        if (TrackerService.isRunning()) return
         val intent = Intent(appContext, TrackerService::class.java)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && TrackerService.hasNotificationPermission(appContext)) {
@@ -62,8 +66,10 @@ class ForegroundServiceHolder(
     }
 
     private fun stop() {
-        // tracking off: the app's text goes; a new config (the scope ends, tracking stays on) keeps it for the new service
-        if (!state.value.enabled) TrackerService.clearText()
+        // a new config (the scope ends, tracking stays on): the service, its notification and the app's text stay for
+        // the new tracker
+        if (state.value.enabled) return
+        TrackerService.clearText()
         appContext.stopService(Intent(appContext, TrackerService::class.java))
     }
 }
@@ -125,6 +131,9 @@ class TrackerService : Service() {
         serviceScope.launch {
             sharedTracker()?.let { startInForeground(it.config.notification) }
         }
+        // the battery profiles switch by themselves while tracking runs (the engine outlives this service: a switch
+        // rebuilds the tracker, which restarts the service)
+        BatteryProfileEngine.start(this)
         // the notification follows the tracker's status by itself (noticeFor), also while the app sleeps or is closed;
         // the ticker catches a limit passing with no status change (no GPS after 10 min, no answer after 30 s). It
         // stops in deep sleep, but the heartbeat alarm (at least every 5 min while tracking) changes the status, and
@@ -273,6 +282,9 @@ class TrackerService : Service() {
             text = title to body
             post(context, service, title to body)
         }
+
+        /** The service runs in the foreground now. */
+        internal fun isRunning(): Boolean = synchronized(lock) { running != null }
 
         /** Tracking stops: the app's text goes, and no update shows from now on (the service is about to end). */
         internal fun clearText() = synchronized(lock) {

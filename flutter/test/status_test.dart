@@ -23,6 +23,7 @@ void main() {
           'waitingForNetwork': true,
           'noAnswerSince': 1700000002000,
           'pending': 2,
+          'profile': 'eco',
         });
         sink.success({'enabled': false});
       }),
@@ -35,10 +36,30 @@ void main() {
     expect(events[0].lastFixTime, 1700000000500);
     expect(events[0].waitingForNetwork, isTrue);
     expect(events[0].noAnswerSince, 1700000002000);
+    expect(events[0].profile, 'eco');
     expect(events[1].enabled, isFalse);
     expect(events[1].lastSentTime, isNull);
     expect(events[1].pending, isNull);
     expect(events[1].lastFixTime, isNull);
     expect(events[1].waitingForNetwork, isNull);
+    expect(events[1].profile, isNull);
+  });
+
+  test('battery profiles go to Android with every field; none by default', () async {
+    const channel = MethodChannel('traccar_client_sdk');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return null;
+    });
+    await TraccarClientSdk().setConfig(const Config(serverUrl: 'https://example.com', deviceId: '1', batteryProfiles: [
+      BatteryProfile(name: 'eco', enterPercent: 30, leavePercent: 40, intervalSeconds: 120, heartbeatIntervalSeconds: 600, withBatterySaver: true),
+    ]));
+    await TraccarClientSdk().setConfig(const Config(serverUrl: 'https://example.com', deviceId: '1'));
+    final args = calls.map((c) => c.arguments as Map).toList();
+    expect(args[0]['batteryProfiles'], [
+      {'name': 'eco', 'enterPercent': 30, 'leavePercent': 40, 'intervalSeconds': 120, 'heartbeatIntervalSeconds': 600, 'withBatterySaver': true},
+    ]);
+    expect(args[1]['batteryProfiles'], isEmpty);
   });
 }

@@ -21,17 +21,20 @@ class Tracker internal constructor(
 ) {
     val state: StateFlow<State> = stateStore.state
 
+    // start and stop act on the tracker in use: a battery profile switch may have rebuilt it since the caller got this one
     suspend fun start() = sharedMutex.withLock {
         Log.log("Tracker start ${config.serverUrl} ${config.deviceId}")
-        stateStore.update { it.copy(enabled = true) }
+        (sharedTrackerInstance ?: this).stateStore.update { it.copy(enabled = true) }
     }
 
     suspend fun stop() = sharedMutex.withLock {
         Log.log("Tracker stop")
-        stateStore.update { it.copy(enabled = false, paused = false) }
+        (sharedTrackerInstance ?: this).stateStore.update { it.copy(enabled = false, paused = false) }
     }
 
     suspend fun requestPosition(alarm: String? = null): Boolean {
+        // a battery profile switch rebuilt the tracker since the caller got this one: the new one's location source
+        sharedTrackerInstance?.takeIf { it !== this }?.let { return it.requestPosition(alarm) }
         Log.log("Position requested${alarm?.let { " alarm=$it" } ?: ""}")
         val raw = locationSource.fetchOnce() ?: run {
             Log.log("Position request: no fix")
@@ -46,13 +49,32 @@ class Tracker internal constructor(
 
     suspend fun clearLogs() = Log.store?.clear()
 
+    /**
+     * A new config for the tracker in use (this one, or the one a battery profile switch built since). The battery
+     * profile in use stays when [newConfig] names none and still has that profile (the SDK chose it, not the app).
+     */
     suspend fun updateConfig(newConfig: Config): Tracker = sharedMutex.withLock {
-        // the same config: nothing to rebuild (a rebuild stops and restarts the whole pipeline)
-        if (newConfig == config && sharedTrackerInstance === this) return@withLock this
-        componentScope.coroutineContext.job.cancelAndJoin()
-        sharedTrackerInstance = null
-        bootstrap(newConfig)
+        val current = sharedTrackerInstance ?: this
+        val kept = current.config.activeProfile?.takeIf { name -> newConfig.batteryProfiles.any { it.name == name } }
+        rebuild(current, if (newConfig.activeProfile == null) newConfig.copy(activeProfile = kept) else newConfig)
     }
+
+    internal suspend fun rebuild(current: Tracker, newConfig: Config): Tracker {
+        // the same config: nothing to rebuild (a rebuild stops and restarts the whole pipeline)
+        if (newConfig == current.config && sharedTrackerInstance === current) return current
+        current.componentScope.coroutineContext.job.cancelAndJoin()
+        if (current !== this) componentScope.coroutineContext.job.cancelAndJoin()
+        sharedTrackerInstance = null
+        return bootstrap(newConfig)
+    }
+}
+
+/** The battery profile engine: [name] (null: none) for the tracker in use; nothing when there is no tracker. */
+internal suspend fun switchBatteryProfile(name: String?): Unit = sharedMutex.withLock {
+    val current = sharedTrackerInstance ?: return@withLock
+    if (current.config.activeProfile == name) return@withLock
+    Log.log("Battery profile ${current.config.activeProfile ?: "none"} -> ${name ?: "none"}")
+    current.rebuild(current, current.config.copy(activeProfile = name))
 }
 
 private val sharedMutex = Mutex()
@@ -82,12 +104,18 @@ private suspend fun openKoin() = withContext(Dispatchers.IO) {
     koin
 }
 
+/** The config as the app gave it (with its battery profiles); the parts of the tracker get [Config.applied]. */
+internal class GivenConfig(val config: Config)
+
 private suspend fun install(koin: Koin, config: Config): Tracker {
     val stateStore = StateStore.create(koin.get())
     koin.declare(stateStore)
-    koin.declare(config)
+    // the parts run with the active battery profile's interval and heartbeat; the Tracker keeps the config as given
+    koin.declare(config.applied())
+    koin.declare(GivenConfig(config))
+    updateStatus { it.copy(profile = config.activeProfile?.takeIf { name -> config.batteryProfiles.any { p -> p.name == name } }) }
     // the settings in force, each time a tracker is built (init, a new config, a restart after a reboot)
-    Log.log(config.describe())
+    Log.log(config.applied().describe() + (config.activeProfile?.let { ", battery profile $it" } ?: ""))
     if (!config.location.stopDetection) {
         stateStore.update { it.copy(paused = false) }
     }

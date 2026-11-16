@@ -36,7 +36,7 @@ internal fun coreModule(): Module = module {
 
     single {
         Tracker(
-            config = get(),
+            config = get<GivenConfig>().config,
             stateStore = get(),
             locationSource = get(),
             batteryProcessor = get(),
