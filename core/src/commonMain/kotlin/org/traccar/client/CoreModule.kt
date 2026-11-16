@@ -1,5 +1,7 @@
 package org.traccar.client
 
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import org.koin.core.module.Module
@@ -25,7 +27,9 @@ internal fun coreModule(): Module = module {
             processors = listOf(get<LocationFilter>(), get()),
             uploader = get(),
             buffer = get<Config>().buffer,
-            scope = get(),
+            scope = get<ComponentCoroutineScope>(),
+            // the heartbeat trigger exists only with stop detection (PlatformModule), and #26 needs stop detection
+            activeHeartbeat = get<Config>().location.let { if (it.stopDetection) it.heartbeatIntervalSeconds.seconds else Duration.ZERO },
         )
     }
 
