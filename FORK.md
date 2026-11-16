@@ -10,7 +10,8 @@ release (the Flutter plugin's `ios/traccar_client_sdk/Package.swift` points at t
 - `pubspec.yaml` in the app takes `traccar_client_sdk` from this repository (`path: flutter`, a fixed `ref`).
 - The app's `android/settings.gradle.kts` sees the `core/` folder next to the plugin and builds
   `org.traccar:traccar-client-sdk` from `:core` here (Gradle `includeBuild`), instead of downloading it from Maven Central.
-- Going back to the official SDK is one change in the app's `pubspec.yaml` (the pub.dev version).
+- Going back to the official SDK is one change in the app's `pubspec.yaml` (the pub.dev version). But a config saved with `batchSize` or `promptBatteryOptimization` (the app sets both) can't be read by the official SDK: after that update, tracking does not restart by itself (boot, app update) until the rider opens the app, whose `init` saves a config it can read. Plan that update for when no one is tracking.
+- iOS still uses the official framework (Swift builds `Config` with every argument). Building the iOS framework from this fork needs the two new arguments added in `TraccarClientSdkPlugin.swift`.
 
 ## Rules
 
@@ -31,5 +32,7 @@ release (the Flutter plugin's `ios/traccar_client_sdk/Package.swift` points at t
 | `updateTrackerNotification` (core, Android), `TraccarClientSdk.updateNotification` (Flutter): the app sets the tracking notification's title and text while tracking runs (whole text, lock screen too, a tap opens the app); iOS answers false | the app wrote over the SDK's notification by its private id and channel, and lost the race when the service rebuilt it; the plugin exposes the core as `api`, so an app's Activity can call it too | to offer (notification API) |
 | `FusedLocationSource`, `AndroidLocationSource`: each one-off fix has its own cancel token; a new request no longer cancels the one running | the cancelled caller was never resumed: a heartbeat tick during an SOS fix, or during the last fix before a stop, left it waiting forever (and GPS on) | to offer (bug) |
 | `Tracker.updateConfig`: the same config does not rebuild | a rebuild stops and restarts the whole pipeline for nothing | to offer |
+| `Config.batchSize` (default 1), `HttpUploader.upload(list)`, `PositionQueue.peek(limit)`/`remove(n)`: positions that waited in the buffer go up to `batchSize` to one JSON request (`{"device_id", "location": [...]}`, Traccar Client JSON format), removed only once taken | after a time without signal the phone sent its queue one request per position, slowly on a weak connection | to offer (opt-in, default unchanged) |
+| `Config.promptBatteryOptimization` (default true) | the app has its own battery step and wrote the SDK's private preference to stop the SDK's screen | to offer |
 
 Note: the Flutter plugin's Android code uses calls that exist only in this fork's `:core` (`trackerStatus`, `updateTrackerNotification`), so it builds only with the app's `includeBuild` substitution (the app's `android/settings.gradle.kts`). The Tests workflow does not compile the plugin; the app's CI APK build does.

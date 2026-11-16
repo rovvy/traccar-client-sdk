@@ -15,11 +15,15 @@ enqueue:
 INSERT INTO Position(latitude, longitude, accuracy, time, altitude, speed, bearing, battery, charging)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
-peek:
+peekMany:
 SELECT latitude, longitude, accuracy, time, altitude, speed, bearing, battery, charging
 FROM Position
 ORDER BY id ASC
-LIMIT 1;
+LIMIT ?;
+
+removeMany:
+DELETE FROM Position
+WHERE id IN (SELECT id FROM Position ORDER BY id ASC LIMIT ?);
 
 removeFirst:
 DELETE FROM Position

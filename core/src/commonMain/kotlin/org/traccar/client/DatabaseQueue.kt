@@ -31,23 +31,37 @@ class DatabaseQueue(driver: SqlDriver) : PositionQueue {
         }
     }
 
-    override suspend fun peek(): Position? = withContext(Dispatchers.IO) {
+    override suspend fun peek(): Position? = peek(1).firstOrNull()
+
+    override suspend fun peek(limit: Int): List<Position> = withContext(Dispatchers.IO) {
         mutex.withLock {
-            queries.peek().executeAsOneOrNull()?.let { row ->
-                Position(
-                    latitude = row.latitude,
-                    longitude = row.longitude,
-                    accuracy = row.accuracy,
-                    time = row.time,
-                    altitude = row.altitude,
-                    speed = row.speed,
-                    bearing = row.bearing,
-                    battery = row.battery?.toInt(),
-                    charging = row.charging?.let { it != 0L },
-                )
-            }
+            queries.peekMany(limit.coerceAtLeast(1).toLong()) { latitude, longitude, accuracy, time, altitude, speed, bearing, battery, charging ->
+                position(latitude, longitude, accuracy, time, altitude, speed, bearing, battery, charging)
+            }.executeAsList()
         }
     }
+
+    override suspend fun remove(count: Int) {
+        if (count <= 0) return
+        withContext(Dispatchers.IO) {
+            mutex.withLock { queries.removeMany(count.toLong()) }
+        }
+    }
+
+    private fun position(
+        latitude: Double?, longitude: Double?, accuracy: Double?, time: Long, altitude: Double?, speed: Double?,
+        bearing: Double?, battery: Long?, charging: Long?,
+    ) = Position(
+        latitude = latitude,
+        longitude = longitude,
+        accuracy = accuracy,
+        time = time,
+        altitude = altitude,
+        speed = speed,
+        bearing = bearing,
+        battery = battery?.toInt(),
+        charging = charging?.let { it != 0L },
+    )
 
     override suspend fun removeFirst() {
         withContext(Dispatchers.IO) {

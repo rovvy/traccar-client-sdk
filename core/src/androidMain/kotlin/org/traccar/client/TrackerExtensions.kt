@@ -16,7 +16,7 @@ suspend fun Tracker.startTracking(context: Context) {
         Log.log("Permissions denied")
         throw IllegalStateException("Location permission denied")
     }
-    promptBatteryOptimization(context)
+    if (config.promptBatteryOptimization) promptBatteryOptimization(context)
     start()
 }
 

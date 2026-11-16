@@ -30,6 +30,8 @@ class TrackerEngine internal constructor(
     private val uploader: Uploader,
     private val buffer: Boolean,
     scope: CoroutineScope,
+    /** Positions sent in one request when several wait (Config.batchSize). */
+    private val batchSize: Int = 1,
     private val initialBackoff: Duration = 5.seconds,
     private val maxBackoff: Duration = 5.minutes,
     /**
@@ -147,23 +149,26 @@ class TrackerEngine internal constructor(
     private suspend fun syncLoop() {
         var backoff = initialBackoff
         while (currentCoroutineContext().isActive) {
-            val pending = queue.peek()
+            val pending = queue.peek(batchSize.coerceIn(1, MAX_BATCH))
             when {
-                pending == null -> pipelineWakeUp.receive()
+                pending.isEmpty() -> pipelineWakeUp.receive()
                 !network.isOnline.value -> {
                     Log.log("Offline, waiting for network")
                     network.isOnline.first { it }
                     Log.log("Network restored")
                 }
-                uploader.upload(pending) -> {
-                    queue.removeFirst()
-                    refreshPending()
-                    backoff = initialBackoff
-                }
                 else -> {
-                    Log.log("Upload failed, retrying in $backoff")
-                    delay(backoff)
-                    backoff = (backoff * 2).coerceAtMost(maxBackoff)
+                    // never more than was given: removing rows that were not sent would lose them
+                    val sent = uploader.upload(pending).coerceIn(0, pending.size)
+                    if (sent > 0) {
+                        queue.remove(sent)
+                        refreshPending()
+                        backoff = initialBackoff
+                    } else {
+                        Log.log("Upload failed, retrying in $backoff")
+                        delay(backoff)
+                        backoff = (backoff * 2).coerceAtMost(maxBackoff)
+                    }
                 }
             }
         }
@@ -172,5 +177,8 @@ class TrackerEngine internal constructor(
     private companion object {
         /** A dropped fix older than this is not sent as a heartbeat: a new fix is asked for instead. */
         val RECENT_FIX = 1.minutes
+
+        /** At most this many in one request, whatever the config says (a server may keep fewer and still answer 2xx). */
+        const val MAX_BATCH = 500
     }
 }

@@ -152,6 +152,9 @@ class TraccarClientSdkPlugin :
             buffer = args["buffer"] as Boolean,
             preferPlatformProviders = args["preferPlatformProviders"] as Boolean,
             notification = NotificationConfig(text = notification["text"] as String),
+            // fork options; missing (an older Dart side) means the SDK's defaults
+            batchSize = (args["batchSize"] as? Number)?.toInt() ?: 1,
+            promptBatteryOptimization = args["promptBatteryOptimization"] as? Boolean ?: true,
         )
     }
 }
