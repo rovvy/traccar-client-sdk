@@ -17,10 +17,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import java.util.Date
 
 class ForegroundServiceHolder(
     scope: ComponentCoroutineScope,
@@ -61,6 +66,8 @@ class ForegroundServiceHolder(
 class TrackerService : Service() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /** Keeps the notification current; one per service (onStartCommand runs at every start). */
+    private var notices: kotlinx.coroutines.Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -76,6 +83,14 @@ class TrackerService : Service() {
 
         serviceScope.launch {
             sharedTracker()?.let { startInForeground(it.config.notification) }
+        }
+        // the notification follows the tracker's status by itself (noticeFor), also while the app sleeps or is closed;
+        // the ticker catches a limit passing with no status change (no GPS after 10 min, no answer after 30 s). It
+        // stops in deep sleep, but the heartbeat alarm (at least every 5 min while tracking) changes the status, and
+        // failed sends retry and change it, so the notification still moves on with the screen off
+        if (notices?.isActive != true) notices = serviceScope.launch {
+            val ticker = flow { while (true) { emit(Unit); delay(30_000) } }
+            merge(trackerStatus, ticker).collect { refresh(this@TrackerService) }
         }
         return START_STICKY
     }
@@ -114,7 +129,7 @@ class TrackerService : Service() {
     }
 
     private fun buildNotification(settings: NotificationConfig): Notification =
-        synchronized(lock) { text }?.let { build(this, it.first, it.second) }
+        synchronized(lock) { shown(this) }?.let { build(this, it.first, it.second) }
             ?: NotificationCompat.Builder(this, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_tracker_notification)
                 .setContentText(settings.text)
@@ -130,6 +145,74 @@ class TrackerService : Service() {
         private var running: TrackerService? = null
         /** The app's title and text (updateTrackerNotification), kept while tracking is on, also across a new config. */
         private var text: Pair<String?, String>? = null
+        /** The wording per state (setTrackerNoticeTexts), kept on the phone so a restart after a reboot has it too. */
+        private var texts: NoticeTexts? = null
+        private var textsLoaded = false
+        /** What the notification shows now, so a status change that changes nothing posts nothing. */
+        private var current: Pair<String?, String>? = null
+
+        private const val PREFERENCES_NAME = "traccar-client-sdk"
+        private const val NOTICE_TEXTS_KEY = "notice-texts"
+
+        /** The app's own text first (a problem only the app knows), else the state's wording, else null (config). */
+        private fun shown(context: Context): Pair<String?, String>? {
+            text?.let { return it }
+            val t = loadTexts(context) ?: return null
+            val clock = android.text.format.DateFormat.getTimeFormat(context)
+            return noticeFor(trackerStatus.value, t, System.currentTimeMillis()) { clock.format(Date(it)) }
+        }
+
+        private fun loadTexts(context: Context): NoticeTexts? {
+            if (!textsLoaded) {
+                textsLoaded = true
+                texts = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+                    .getString(NOTICE_TEXTS_KEY, null)
+                    ?.let { runCatching { json.decodeFromString(NoticeTexts.serializer(), it) }.getOrNull() }
+            }
+            return texts
+        }
+
+        private val json = Json { ignoreUnknownKeys = true }
+
+        /** Posts the notification again when what it should show changed. */
+        private fun refresh(context: Context) = synchronized(lock) {
+            val service = running ?: return@synchronized
+            val now = shown(context) ?: return@synchronized
+            if (now == current) return@synchronized
+            post(context, service, now)
+        }
+
+        private fun post(context: Context, service: TrackerService, shown: Pair<String?, String>): Boolean {
+            if (!hasNotificationPermission(context)) return false
+            val manager = context.getSystemService<NotificationManager>() ?: return false
+            if (manager.activeNotifications.none { it.id == NOTIFICATION_ID }) return false
+            manager.notify(NOTIFICATION_ID, build(service, shown.first, shown.second))
+            current = shown
+            return true
+        }
+
+        /**
+         * The wording for each state; from then on the SDK keeps the notification current by itself from its status
+         * (no internet, no GPS, refused, nothing sent, last sent), unless the app set its own text ([update]). Kept on
+         * the phone. True when the notification shows it now.
+         */
+        fun setTexts(context: Context, value: NoticeTexts): Boolean = synchronized(lock) {
+            texts = value
+            textsLoaded = true
+            context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE).edit()
+                .putString(NOTICE_TEXTS_KEY, json.encodeToString(NoticeTexts.serializer(), value)).apply()
+            val service = running ?: return@synchronized false
+            val now = shown(context) ?: return@synchronized false
+            post(context, service, now)
+        }
+
+        /** The app's own text goes; the state's wording shows again. */
+        fun clearAppText(context: Context): Boolean = synchronized(lock) {
+            text = null
+            val service = running ?: return@synchronized false
+            val now = shown(context) ?: return@synchronized false
+            post(context, service, now)
+        }
 
         /**
          * Shows [title] and [body] in the tracking notification instead of the config's fixed text, until tracking
@@ -141,16 +224,13 @@ class TrackerService : Service() {
         fun update(context: Context, title: String?, body: String): Boolean = synchronized(lock) {
             val service = running ?: return@synchronized false
             text = title to body
-            if (!hasNotificationPermission(context)) return@synchronized false
-            val manager = context.getSystemService<NotificationManager>() ?: return@synchronized false
-            if (manager.activeNotifications.none { it.id == NOTIFICATION_ID }) return@synchronized false
-            manager.notify(NOTIFICATION_ID, build(service, title, body))
-            true
+            post(context, service, title to body)
         }
 
         /** Tracking stops: the app's text goes, and no update shows from now on (the service is about to end). */
         internal fun clearText() = synchronized(lock) {
             text = null
+            current = null
             running = null
         }
 

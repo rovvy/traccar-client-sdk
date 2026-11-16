@@ -35,6 +35,17 @@ suspend fun Tracker.requestPosition(context: Context, alarm: String? = null): Bo
 fun updateTrackerNotification(context: Context, title: String?, text: String): Boolean =
     TrackerService.update(context, title, text)
 
+/**
+ * The tracking notification's wording per state. From then on the SDK keeps the notification current by itself from
+ * its status (no internet, no GPS, refused, nothing sent, last sent), also while the app sleeps or is closed, unless
+ * the app set its own text ([updateTrackerNotification]; [clearTrackerNotification] gives the notification back).
+ * Kept on the phone. True when shown now.
+ */
+fun setTrackerNoticeTexts(context: Context, texts: NoticeTexts): Boolean = TrackerService.setTexts(context, texts)
+
+/** Drops the app's own text ([updateTrackerNotification]): the state's wording shows again. */
+fun clearTrackerNotification(context: Context): Boolean = TrackerService.clearAppText(context)
+
 private fun promptBatteryOptimization(context: Context) {
     val powerManager = context.getSystemService<PowerManager>() ?: return
     if (powerManager.isIgnoringBatteryOptimizations(context.packageName)) return

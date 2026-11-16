@@ -63,7 +63,7 @@ class TrackerEngine internal constructor(
                 updateStatus {
                     // a new start does not inherit the run before's fix or failed sends (the status is one per process)
                     if (state.enabled && !it.enabled) {
-                        it.copy(enabled = true, paused = state.paused, lastFixTime = null, noAnswerSince = null)
+                        it.copy(enabled = true, paused = state.paused, startedAt = now(), lastFixTime = null, noAnswerSince = null)
                     } else {
                         it.copy(enabled = state.enabled, paused = state.paused)
                     }

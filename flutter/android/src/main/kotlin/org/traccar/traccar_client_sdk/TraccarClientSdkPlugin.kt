@@ -109,6 +109,33 @@ class TraccarClientSdkPlugin :
                 val args = call.arguments as? Map<*, *>
                 result.success(updateTrackerNotification(context, args?.get("title") as? String, args?.get("text") as? String ?: ""))
             }
+            "setNoticeTexts" -> {
+                val a = call.arguments as? Map<*, *> ?: emptyMap<Any, Any>()
+                val keys = listOf(
+                    "okTitle", "okText", "waitingTitle", "waitingText", "noInternetTitle", "noInternetText",
+                    "noInternetTextNone", "noGpsTitle", "noGpsText", "silentTitle", "silentText", "refusedTitle", "refusedText",
+                )
+                // a missing or empty text would show a blank line on the lock screen, and be kept: refuse the whole set
+                val missing = keys.filter { (a[it] as? String).isNullOrBlank() }
+                if (missing.isNotEmpty()) {
+                    result.error("bad_texts", "missing: ${missing.joinToString()}", null)
+                    return
+                }
+                fun s(key: String) = a[key] as String
+                val texts = org.traccar.client.NoticeTexts(
+                    okTitle = s("okTitle"), okText = s("okText"),
+                    waitingTitle = s("waitingTitle"), waitingText = s("waitingText"),
+                    noInternetTitle = s("noInternetTitle"), noInternetText = s("noInternetText"),
+                    noInternetTextNone = s("noInternetTextNone"),
+                    noGpsTitle = s("noGpsTitle"), noGpsText = s("noGpsText"),
+                    silentTitle = s("silentTitle"), silentText = s("silentText"),
+                    refusedTitle = s("refusedTitle"), refusedText = s("refusedText"),
+                    limitMinutes = (a["limitMinutes"] as? Number)?.toInt() ?: 10,
+                    noAnswerSeconds = (a["noAnswerSeconds"] as? Number)?.toInt() ?: 30,
+                )
+                result.success(org.traccar.client.setTrackerNoticeTexts(context, texts))
+            }
+            "clearNotification" -> result.success(org.traccar.client.clearTrackerNotification(context))
             "clearLogs" -> scope.launchHandler(result) {
                 sharedTracker()?.clearLogs()
                 null
