@@ -57,3 +57,15 @@ val LocationConfig.effective: LocationConfig
         distanceMeters > 0 -> copy(intervalSeconds = 0)
         else -> this
     }
+
+/**
+ * One log line with the settings that decide how often the phone takes and sends a position, for support: `Config:
+ * HIGH, interval 60 s, distance 0 m, stop detection 180 s, heartbeat 300 s, batch 50`. The server address and the
+ * device ID are left out (the start's own line has them).
+ */
+fun Config.describe(): String {
+    val l = location
+    val stop = if (l.stopDetection) "stop detection ${l.stopTimeoutSeconds} s" else "stop detection off"
+    return "Config: ${l.accuracy}, interval ${l.intervalSeconds} s, distance ${l.distanceMeters} m, " +
+        "$stop, heartbeat ${l.heartbeatIntervalSeconds} s, batch $batchSize" + if (buffer) "" else ", no buffer"
+}

@@ -67,11 +67,28 @@ class HttpUploader(
         return if (ok) positions.size else 0
     }
 
-    /** One request: the log line `Upload response NNN` (apps read it), the status, and false on any error. */
-    private suspend fun send(request: suspend () -> HttpResponse): Boolean = try {
+    /**
+     * One request: the log line `Upload response NNN in N ms` (apps read the code after "Upload response "), the
+     * status, and false on any error.
+     */
+    private suspend fun send(request: suspend () -> HttpResponse): Boolean {
+        val started = kotlin.time.Clock.System.now().toEpochMilliseconds()
+        return try {
+            sendTimed(request, started)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
+            Log.log("Upload error after ${now - started} ms: ${e.message}")
+            updateStatus { it.copy(lastUploadTime = now, lastUploadCode = 0, noAnswerSince = it.noAnswerSince ?: now) }
+            false
+        }
+    }
+
+    private suspend fun sendTimed(request: suspend () -> HttpResponse, started: Long): Boolean {
         val response = request()
-        Log.log("Upload response ${response.status.value}")
         val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
+        Log.log("Upload response ${response.status.value} in ${now - started} ms")
         val ok = response.status.isSuccess()
         updateStatus {
             it.copy(
@@ -81,14 +98,7 @@ class HttpUploader(
                 noAnswerSince = null,
             )
         }
-        ok
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Throwable) {
-        Log.log("Upload error: ${e.message}")
-        val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
-        updateStatus { it.copy(lastUploadTime = now, lastUploadCode = 0, noAnswerSince = it.noAnswerSince ?: now) }
-        false
+        return ok
     }
 
     // A value that is not a finite number is left out: JSON has no NaN, and one would make the whole batch unreadable

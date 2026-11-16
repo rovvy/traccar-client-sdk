@@ -6,12 +6,17 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.location.LocationManager
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -69,9 +74,45 @@ class TrackerService : Service() {
     /** Keeps the notification current; one per service (onStartCommand runs at every start). */
     private var notices: kotlinx.coroutines.Job? = null
 
+    /** Logs the phone's own switches that stop or slow tracking, while the service runs (for support). */
+    private val phoneState = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                LocationManager.PROVIDERS_CHANGED_ACTION -> logChange("Location", locationOn())
+                PowerManager.ACTION_POWER_SAVE_MODE_CHANGED -> logChange("Battery saver", powerSave())
+                PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED -> logChange("Doze", idle())
+            }
+        }
+    }
+    private val lastPhoneState = mutableMapOf<String, Boolean?>()
+
+    private fun locationOn(): Boolean? = getSystemService<LocationManager>()?.let {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) it.isLocationEnabled
+        else it.isProviderEnabled(LocationManager.GPS_PROVIDER) || it.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+    }
+    private fun powerSave(): Boolean? = getSystemService<PowerManager>()?.isPowerSaveMode
+    private fun idle(): Boolean? = getSystemService<PowerManager>()?.isDeviceIdleMode
+
+    // PROVIDERS_CHANGED comes once per provider; only a change of the switch itself is logged
+    private fun logChange(name: String, on: Boolean?) = synchronized(lastPhoneState) {
+        if (lastPhoneState.containsKey(name) && lastPhoneState[name] == on) return@synchronized
+        lastPhoneState[name] = on
+        Log.log("$name ${when (on) { true -> "on"; false -> "off"; null -> "unknown" }}")
+    }
+
     override fun onCreate() {
         super.onCreate()
         Log.log("Service created")
+        logChange("Location", locationOn())
+        logChange("Battery saver", powerSave())
+        logChange("Doze", idle())
+        val filter = IntentFilter().apply {
+            addAction(LocationManager.PROVIDERS_CHANGED_ACTION)
+            addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
+            addAction(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED)
+        }
+        // system broadcasts only: they reach a receiver that is not exported
+        ContextCompat.registerReceiver(this, phoneState, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -97,6 +138,7 @@ class TrackerService : Service() {
 
     override fun onDestroy() {
         Log.log("Service destroyed")
+        runCatching { unregisterReceiver(phoneState) }
         // after this no update can show a notification; one posted just before (Android removes the foreground
         // notification before onDestroy) is removed here, so none is left once the service is gone
         synchronized(lock) {
@@ -174,6 +216,9 @@ class TrackerService : Service() {
 
         private val json = Json { ignoreUnknownKeys = true }
 
+        private val digits = Regex("[0-9]")
+        private fun kind(shown: Pair<String?, String>?) = shown?.let { it.first?.replace(digits, "") to it.second.replace(digits, "") }
+
         /** Posts the notification again when what it should show changed. */
         private fun refresh(context: Context) = synchronized(lock) {
             val service = running ?: return@synchronized
@@ -187,6 +232,8 @@ class TrackerService : Service() {
             val manager = context.getSystemService<NotificationManager>() ?: return false
             if (manager.activeNotifications.none { it.id == NOTIFICATION_ID }) return false
             manager.notify(NOTIFICATION_ID, build(service, shown.first, shown.second))
+            // a change of state is logged, not each new clock time in the same state (the title moves every minute)
+            if (kind(shown) != kind(current)) Log.log("Notification: ${shown.first?.let { "$it | " } ?: ""}${shown.second}")
             current = shown
             return true
         }

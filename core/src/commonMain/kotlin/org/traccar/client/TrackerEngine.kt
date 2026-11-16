@@ -192,6 +192,9 @@ class TrackerEngine internal constructor(
                     if (sent > 0) {
                         queue.remove(sent)
                         refreshPending()
+                        // how a backlog drains, for support; a single position as usual says nothing more
+                        val left = trackerStatus.value.pending ?: 0
+                        if (sent > 1 || left > 0) Log.log("Sent $sent, $left waiting")
                         backoff = initialBackoff
                     } else {
                         Log.log("Upload failed, retrying in $backoff")
