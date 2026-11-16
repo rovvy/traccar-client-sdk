@@ -24,3 +24,4 @@ release (the Flutter plugin's `ios/traccar_client_sdk/Package.swift` points at t
 | Change | Why | Upstream |
 |---|---|---|
 | `settings.gradle.kts`: the sample app only when built on its own | the app's build needs only `:core` | not offered (ours only) |
+| Kotlin unit tests on the build PC (`withHostTest`, `core/src/androidHostTest`), workflow `Tests` | rules we change get tests | can be offered (upstream has no tests yet) |
