@@ -32,10 +32,12 @@ class AlarmHeartbeatTrigger(
         scope.launch {
             HeartbeatReceiver.events.collect {
                 signals.emit(Signal.HeartbeatTick)
-                if (state.value.enabled && state.value.paused) scheduleNext()
+                if (state.value.enabled) scheduleNext()
             }
         }
-        scope.observeState(state, { it.enabled && it.paused }, inactive = false) { active ->
+        // while tracking: paused, a tick is the stationary heartbeat; moving, the engine sends a position only when
+        // nothing went out for the interval (active heartbeat, upstream issue #26)
+        scope.observeState(state, { it.enabled }, inactive = false) { active ->
             if (active) scheduleNext() else cancelScheduled()
         }
     }

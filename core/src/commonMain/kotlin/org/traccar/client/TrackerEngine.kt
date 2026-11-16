@@ -2,7 +2,6 @@ package org.traccar.client
 
 import kotlin.time.Clock
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CoroutineScope
@@ -13,10 +12,13 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.cancellation.CancellationException
 
 class TrackerEngine internal constructor(
     private val stateStore: StateStore,
@@ -31,9 +33,10 @@ class TrackerEngine internal constructor(
     private val initialBackoff: Duration = 5.seconds,
     private val maxBackoff: Duration = 5.minutes,
     /**
-     * While moving (not paused): when nothing went out for this long, take a fix and send it like a heartbeat.
-     * Covers the phone wrongly leaving the stationary state while it stands still, when the distance rule then
-     * keeps every fix back and the stationary heartbeat is off. Zero: off.
+     * While moving (not paused), a heartbeat tick sends a position when nothing went out for this long. Covers the
+     * phone wrongly leaving the stationary state while it stands still (upstream issue #26): the distance rule then
+     * keeps every fix back and the stationary heartbeat is off. Zero: off. The platform's heartbeat trigger must
+     * tick while not paused too (Android: AlarmHeartbeatTrigger).
      */
     private val activeHeartbeat: Duration = Duration.ZERO,
     private val now: () -> Long = { Clock.System.now().toEpochMilliseconds() },
@@ -42,12 +45,13 @@ class TrackerEngine internal constructor(
     private val pipelineWakeUp = Channel<Unit>(Channel.CONFLATED)
     private val heartbeatPositions = MutableSharedFlow<Position>(extraBufferCapacity = 4)
     private val lastOutput = MutableStateFlow(now())
+    /** The newest fix from the location source, kept or not: an active heartbeat sends it when it is new enough. */
+    private val lastIncoming = MutableStateFlow<Position?>(null)
 
     init {
         scope.launch { signalSources.map { it.signals }.merge().collect { handle(it) } }
         scope.launch { pipelineLoop() }
         scope.launch { syncLoop() }
-        if (activeHeartbeat > Duration.ZERO) scope.launch { activeHeartbeatLoop() }
     }
 
     suspend fun handle(signal: Signal) = mutex.withLock {
@@ -74,15 +78,37 @@ class TrackerEngine internal constructor(
 
     private suspend fun applyHeartbeatTick() {
         val state = stateStore.state.value
-        if (!state.enabled || !state.paused) return
-        Log.log("HeartbeatTick")
-        val position = locationSource.fetchOnce()
-            ?: Position(time = Clock.System.now().toEpochMilliseconds())
-        heartbeatPositions.emit(position.copy(heartbeat = true))
+        if (!state.enabled) return
+        if (state.paused) {
+            Log.log("HeartbeatTick")
+            emitHeartbeat(locationSource.fetchOnce())
+            return
+        }
+        if (activeHeartbeat <= Duration.ZERO) return
+        val silent = now() - lastOutput.value
+        // a little early still counts (alarm timing); a clock set back counts as due
+        if (silent in 0 until activeHeartbeat.inWholeMilliseconds * 9 / 10) return
+        Log.log("ActiveHeartbeat: nothing sent for ${silent / 1000}s")
+        // a fix the filter dropped since the last output costs no GPS; otherwise ask for one, never waiting forever
+        val recent = lastIncoming.value?.takeIf { it.time > lastOutput.value }
+        val position = recent ?: try {
+            withTimeoutOrNull(LOCATION_FETCH_TIMEOUT + 5.seconds) { locationSource.fetchOnce() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            Log.log("ActiveHeartbeat fix failed: $e")
+            null
+        }
+        emitHeartbeat(position)
+    }
+
+    private suspend fun emitHeartbeat(position: Position?) {
+        val heartbeat = (position ?: Position(time = now())).copy(heartbeat = true)
+        heartbeatPositions.emit(heartbeat)
     }
 
     private suspend fun pipelineLoop() {
-        merge(locationSource.positions, heartbeatPositions).collect { incoming ->
+        merge(locationSource.positions.onEach { lastIncoming.value = it }, heartbeatPositions).collect { incoming ->
             if (!stateStore.state.value.enabled) return@collect
             var current: Position? = incoming
             for (processor in processors) {
@@ -96,28 +122,6 @@ class TrackerEngine internal constructor(
             } else {
                 uploader.upload(final)
             }
-        }
-    }
-
-    private suspend fun activeHeartbeatLoop() {
-        var wait = activeHeartbeat
-        while (currentCoroutineContext().isActive) {
-            delay(wait)
-            val due = lastOutput.value + activeHeartbeat.inWholeMilliseconds - now()
-            if (due > 0) {
-                wait = due.milliseconds
-                continue
-            }
-            wait = activeHeartbeat
-            mutex.withLock {
-                val state = stateStore.state.value
-                // paused: the stationary heartbeat is in charge
-                if (!state.enabled || state.paused) return@withLock
-                Log.log("ActiveHeartbeat: nothing sent for $activeHeartbeat")
-                val position = locationSource.fetchOnce() ?: Position(time = now())
-                heartbeatPositions.emit(position.copy(heartbeat = true))
-            }
-            lastOutput.value = now()
         }
     }
 
