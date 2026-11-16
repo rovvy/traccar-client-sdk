@@ -86,6 +86,8 @@ private suspend fun install(koin: Koin, config: Config): Tracker {
     val stateStore = StateStore.create(koin.get())
     koin.declare(stateStore)
     koin.declare(config)
+    // the settings in force, each time a tracker is built (init, a new config, a restart after a reboot)
+    Log.log(config.describe())
     if (!config.location.stopDetection) {
         stateStore.update { it.copy(paused = false) }
     }

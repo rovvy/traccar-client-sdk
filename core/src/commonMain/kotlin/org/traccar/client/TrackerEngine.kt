@@ -74,9 +74,11 @@ class TrackerEngine internal constructor(
     }
 
     // one at a time: two counts published out of order would show an old number
-    private suspend fun refreshPending() = pendingMutex.withLock {
+    /** Counts the buffer into the status. -> the count. */
+    private suspend fun refreshPending(): Int = pendingMutex.withLock {
         val pending = queue.count()
         updateStatus { it.copy(pending = pending) }
+        pending
     }
 
     suspend fun handle(signal: Signal) = mutex.withLock {
@@ -172,6 +174,8 @@ class TrackerEngine internal constructor(
 
     private suspend fun syncLoop() {
         var backoff = initialBackoff
+        // positions sent since a send left others waiting (a backlog after a time without network), for support
+        var drained = 0
         while (currentCoroutineContext().isActive) {
             val pending = queue.peek(batchSize.coerceIn(1, MAX_BATCH))
             when {
@@ -191,7 +195,15 @@ class TrackerEngine internal constructor(
                     val sent = uploader.upload(pending).coerceIn(0, pending.size)
                     if (sent > 0) {
                         queue.remove(sent)
-                        refreshPending()
+                        val left = refreshPending()
+                        // a backlog in two lines, when it starts and once it is sent; a single position as usual says
+                        // nothing (one line a send would push the rest out of the log during a long backlog)
+                        if (left > 0 && drained == 0) Log.log("Backlog: sent $sent, $left waiting")
+                        drained = if (left > 0 || drained > 0 || sent > 1) drained + sent else 0
+                        if (left == 0 && drained > 0) {
+                            Log.log("Backlog sent: $drained positions")
+                            drained = 0
+                        }
                         backoff = initialBackoff
                     } else {
                         Log.log("Upload failed, retrying in $backoff")
@@ -203,7 +215,7 @@ class TrackerEngine internal constructor(
         }
     }
 
-    private companion object {
+    internal companion object {
         /** A dropped fix older than this is not sent as a heartbeat: a new fix is asked for instead. */
         val RECENT_FIX = 1.minutes
 
