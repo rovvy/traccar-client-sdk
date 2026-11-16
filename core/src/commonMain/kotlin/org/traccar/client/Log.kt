@@ -40,9 +40,10 @@ internal object Log {
                     early.toList().also { early.clear() }
                 }
             } ?: return@launch
-            for ((t, m) in waiting) target.insert(m, t)
-            target.insert(message, time)
-            target.trim(retention)
+            val open = target ?: return@launch
+            for ((t, m) in waiting) open.insert(m, t)
+            open.insert(message, time)
+            open.trim(retention)
         }
     }
 }

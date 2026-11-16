@@ -215,7 +215,7 @@ class TrackerEngine internal constructor(
         }
     }
 
-    private companion object {
+    internal companion object {
         /** A dropped fix older than this is not sent as a heartbeat: a new fix is asked for instead. */
         val RECENT_FIX = 1.minutes
 
