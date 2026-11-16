@@ -31,7 +31,6 @@ class AndroidLocationSource(
     override val positions = MutableSharedFlow<Position>(extraBufferCapacity = 8)
 
     private var listener: LocationListenerCompat? = null
-    private var currentLocationCancellation: CancellationSignal? = null
 
     init {
         scope.observeState(state, State::locationMode, inactive = LocationMode.Off) { mode ->
@@ -93,24 +92,20 @@ class AndroidLocationSource(
         listener = null
     }
 
+    // Each request has its own signal: a new one (a heartbeat tick) never cancels one still running (an SOS, the
+    // final fix before a stop), whose caller would then wait forever. The platform ends each after about 30 s.
     private suspend fun awaitCurrentLocation(): Location? {
-        currentLocationCancellation?.cancel()
         val signal = CancellationSignal()
-        currentLocationCancellation = signal
-        return try {
-            suspendCancellableCoroutine { continuation ->
-                LocationManagerCompat.getCurrentLocation(
-                    locationManager,
-                    locationConfig.accuracy.toAndroidProvider(),
-                    signal,
-                    ContextCompat.getMainExecutor(appContext),
-                ) { location ->
-                    if (continuation.isActive) continuation.resume(location)
-                }
-                continuation.invokeOnCancellation { signal.cancel() }
+        return suspendCancellableCoroutine { continuation ->
+            LocationManagerCompat.getCurrentLocation(
+                locationManager,
+                locationConfig.accuracy.toAndroidProvider(),
+                signal,
+                ContextCompat.getMainExecutor(appContext),
+            ) { location ->
+                if (continuation.isActive) continuation.resume(location)
             }
-        } finally {
-            if (currentLocationCancellation === signal) currentLocationCancellation = null
+            continuation.invokeOnCancellation { signal.cancel() }
         }
     }
 
