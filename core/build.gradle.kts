@@ -25,6 +25,8 @@ kotlin {
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
         androidResources.enable = true
+        // unit tests on the build PC (JVM), for the rules in commonMain: ./gradlew :core:testAndroidHostTest
+        withHostTest {}
     }
 
     val xcframework = XCFramework("TraccarClientSDK")
@@ -61,6 +63,10 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
+            implementation(libs.kotlinx.coroutines.test)
+        }
+        getByName("androidHostTest").dependencies {
+            implementation(libs.sqldelight.sqlite.driver)
         }
     }
 }
