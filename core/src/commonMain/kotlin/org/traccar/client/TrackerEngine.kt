@@ -59,7 +59,13 @@ class TrackerEngine internal constructor(
         scope.launch { pipelineLoop() }
         scope.launch { syncLoop() }
         scope.launch {
-            stateStore.state.collect { state -> updateStatus { it.copy(enabled = state.enabled, paused = state.paused) } }
+            stateStore.state.collect { state ->
+                updateStatus {
+                    // a new start does not inherit the last fix of the run before (the status is one per process)
+                    val fix = if (state.enabled && !it.enabled) null else it.lastFixTime
+                    it.copy(enabled = state.enabled, paused = state.paused, lastFixTime = fix)
+                }
+            }
         }
         scope.launch { refreshPending() }
     }
@@ -119,13 +125,28 @@ class TrackerEngine internal constructor(
         emitHeartbeat(position)
     }
 
+    /**
+     * The status's last fix time, from the fix's own time: a heartbeat's fix can be the phone's cached last location
+     * (fetchOnce falls back to it), which must not count as a new fix. Written at most every [FIX_STEP], so a phone
+     * that gives a fix every second does not send a status every second.
+     */
+    private fun noteFix(position: Position) {
+        if (position.latitude == null || position.longitude == null) return
+        updateStatus {
+            val last = it.lastFixTime
+            if (last != null && position.time < last + FIX_STEP.inWholeMilliseconds) it else it.copy(lastFixTime = position.time)
+        }
+    }
+
     private suspend fun emitHeartbeat(position: Position?) {
         val heartbeat = (position ?: Position(time = now())).copy(heartbeat = true)
         heartbeatPositions.emit(heartbeat)
     }
 
     private suspend fun pipelineLoop() {
-        merge(locationSource.positions.onEach { lastIncoming.value = it to now() }, heartbeatPositions).collect { incoming ->
+        merge(locationSource.positions.onEach { lastIncoming.value = it to now() }, heartbeatPositions)
+            .onEach(::noteFix)
+            .collect { incoming ->
             if (!stateStore.state.value.enabled) return@collect
             var current: Position? = incoming
             for (processor in processors) {
@@ -180,5 +201,8 @@ class TrackerEngine internal constructor(
 
         /** At most this many in one request, whatever the config says (a server may keep fewer and still answer 2xx). */
         const val MAX_BATCH = 500
+
+        /** The status's last fix time moves in steps of at least this much. */
+        val FIX_STEP = 30.seconds
     }
 }

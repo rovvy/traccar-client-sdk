@@ -18,6 +18,10 @@ data class TrackerStatus(
     val lastPositionTime: Long? = null,
     val lastLatitude: Double? = null,
     val lastLongitude: Double? = null,
+    /** The time of the newest location fix (the fix's own time): any fix the location source gave, kept or dropped by
+     *  the filter, or a heartbeat that carried one. A heartbeat without a fix, or with the phone's older cached
+     *  location, does not move it. Moves in steps of at least 30 s; cleared when tracking starts. */
+    val lastFixTime: Long? = null,
     /** The newest upload attempt and its HTTP status; 0 when there was no answer (no network, timeout). */
     val lastUploadTime: Long? = null,
     val lastUploadCode: Int? = null,
