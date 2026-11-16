@@ -31,13 +31,7 @@ class DatabaseQueue(driver: SqlDriver) : PositionQueue {
         }
     }
 
-    override suspend fun peek(): Position? = withContext(Dispatchers.IO) {
-        mutex.withLock {
-            queries.peek().executeAsOneOrNull()?.let { row ->
-                position(row.latitude, row.longitude, row.accuracy, row.time, row.altitude, row.speed, row.bearing, row.battery, row.charging)
-            }
-        }
-    }
+    override suspend fun peek(): Position? = peek(1).firstOrNull()
 
     override suspend fun peek(limit: Int): List<Position> = withContext(Dispatchers.IO) {
         mutex.withLock {

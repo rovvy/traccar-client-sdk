@@ -3,7 +3,7 @@ package org.traccar.client
 import io.ktor.client.HttpClient
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
-import io.ktor.content.TextContent
+import io.ktor.http.content.TextContent
 import io.ktor.http.ContentType
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -23,8 +23,8 @@ class HttpUploader(
     private val httpClient: HttpClient,
 ) : Uploader {
 
-    override suspend fun upload(position: Position): Boolean = try {
-        val response: HttpResponse = httpClient.submitForm(
+    override suspend fun upload(position: Position): Boolean = send {
+        httpClient.submitForm(
             url = config.serverUrl,
             formParameters = Parameters.build {
                 append("id", config.deviceId)
@@ -42,6 +42,34 @@ class HttpUploader(
         ) {
             config.headers.forEach { (name, value) -> headers.append(name, value) }
         }
+    }
+
+    /**
+     * Several positions (the engine gives at most `Config.batchSize`) in one JSON request: `{"device_id", "location":
+     * [...]}`, each in the Traccar Client JSON form (ISO time, coords in degrees, speed in m/s, battery level 0-1).
+     * All or none: the answer is for the whole request. One position goes as form fields, as without batching.
+     * Buffered positions carry no alarm (the queue does not keep one; an SOS is sent on its own, never queued).
+     */
+    override suspend fun upload(positions: List<Position>): Int {
+        if (positions.isEmpty()) return 0
+        if (positions.size == 1) return if (upload(positions[0])) 1 else 0
+        Log.log("Upload batch of ${positions.size}")
+        val body = buildJsonObject {
+            put("device_id", config.deviceId)
+            put("location", buildJsonArray { positions.forEach { add(it.toJson()) } })
+        }
+        val ok = send {
+            httpClient.post(config.serverUrl) {
+                config.headers.forEach { (name, value) -> headers.append(name, value) }
+                setBody(TextContent(body.toString(), ContentType.Application.Json))
+            }
+        }
+        return if (ok) positions.size else 0
+    }
+
+    /** One request: the log line `Upload response NNN` (apps read it), the status, and false on any error. */
+    private suspend fun send(request: suspend () -> HttpResponse): Boolean = try {
+        val response = request()
         Log.log("Upload response ${response.status.value}")
         val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
         val ok = response.status.isSuccess()
@@ -57,49 +85,18 @@ class HttpUploader(
         false
     }
 
-    /**
-     * Several positions in one JSON request (`Config.batchSize` above 1): `{"device_id", "location": [...]}`, each in
-     * the Traccar Client JSON form (ISO time, coords in degrees, speed in m/s, battery level 0-1). All or none: the
-     * answer is for the whole request. One position goes as form fields, as without batching.
-     */
-    override suspend fun upload(positions: List<Position>): Int {
-        if (positions.isEmpty()) return 0
-        if (config.batchSize <= 1 || positions.size == 1) return if (upload(positions[0])) 1 else 0
-        return try {
-            Log.log("Upload batch of ${positions.size}")
-            val body = buildJsonObject {
-                put("device_id", config.deviceId)
-                put("location", buildJsonArray { positions.forEach { add(it.toJson()) } })
-            }
-            val response: HttpResponse = httpClient.post(config.serverUrl) {
-                config.headers.forEach { (name, value) -> headers.append(name, value) }
-                setBody(TextContent(body.toString(), ContentType.Application.Json))
-            }
-            Log.log("Upload response ${response.status.value}")
-            val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
-            val ok = response.status.isSuccess()
-            updateStatus {
-                it.copy(lastUploadTime = now, lastUploadCode = response.status.value, lastSentTime = if (ok) now else it.lastSentTime)
-            }
-            if (ok) positions.size else 0
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Throwable) {
-            Log.log("Upload error: ${e.message}")
-            updateStatus { it.copy(lastUploadTime = kotlin.time.Clock.System.now().toEpochMilliseconds(), lastUploadCode = 0) }
-            0
-        }
-    }
-
+    // A value that is not a finite number is left out: JSON has no NaN, and one would make the whole batch unreadable
+    // (the server would answer saved 0 and the positions would be gone).
     private fun Position.toJson(): JsonObject = buildJsonObject {
         put("timestamp", Instant.fromEpochMilliseconds(time).toString())
         putJsonObject("coords") {
-            latitude?.let { put("latitude", it) }
-            longitude?.let { put("longitude", it) }
-            accuracy?.let { put("accuracy", it) }
-            speed?.let { put("speed", it) }
-            bearing?.let { put("heading", it) }
-            altitude?.let { put("altitude", it) }
+            fun num(key: String, value: Double?) { if (value != null && value.isFinite()) put(key, value) }
+            num("latitude", latitude)
+            num("longitude", longitude)
+            num("accuracy", accuracy)
+            num("speed", speed)
+            num("heading", bearing)
+            num("altitude", altitude)
         }
         if (battery != null || charging != null) {
             putJsonObject("battery") {
@@ -107,7 +104,6 @@ class HttpUploader(
                 charging?.let { put("is_charging", it) }
             }
         }
-        alarm?.let { put("event", it) }
     }
 
     private fun Double.toKnots(): Double = round(this * 1.94384 * 100) / 100

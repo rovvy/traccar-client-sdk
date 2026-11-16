@@ -9,6 +9,8 @@ import org.traccar.client.db.Database
 
 class ConfigStore(driver: SqlDriver) {
 
+    private val lenient = Json { ignoreUnknownKeys = true }
+
     private val queries = Database(driver).configQueries
 
     suspend fun save(config: Config) = withContext(Dispatchers.IO) {
@@ -16,7 +18,9 @@ class ConfigStore(driver: SqlDriver) {
     }
 
     suspend fun load(): Config? = withContext(Dispatchers.IO) {
-        queries.selectConfig().executeAsOneOrNull()?.let { Json.decodeFromString(it) }
+        // a key this version does not know (a newer SDK saved it) is skipped, so the tracker still starts after a
+        // downgrade instead of failing to read its config
+        queries.selectConfig().executeAsOneOrNull()?.let { lenient.decodeFromString(it) }
     }
 
     suspend fun clear() = withContext(Dispatchers.IO) {

@@ -15,12 +15,6 @@ enqueue:
 INSERT INTO Position(latitude, longitude, accuracy, time, altitude, speed, bearing, battery, charging)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
-peek:
-SELECT latitude, longitude, accuracy, time, altitude, speed, bearing, battery, charging
-FROM Position
-ORDER BY id ASC
-LIMIT 1;
-
 peekMany:
 SELECT latitude, longitude, accuracy, time, altitude, speed, bearing, battery, charging
 FROM Position

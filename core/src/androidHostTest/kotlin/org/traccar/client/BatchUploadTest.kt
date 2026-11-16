@@ -156,4 +156,27 @@ class BatchUploadTest {
         assertEquals(1, uploader.upload(listOf(fix(0))))
         assertTrue(bodies.single().startsWith("application/x-www-form-urlencoded"), bodies.single())
     }
+
+    /** A value that is not a number (NaN) is left out, so the rest of the batch still reads as JSON. */
+    @Test
+    fun notANumberIsLeftOut() = runTest {
+        var body = ""
+        val client = HttpClient(MockEngine { request ->
+            body = (request.body as TextContent).text
+            respond("{}", HttpStatusCode.OK)
+        })
+        val uploader = HttpUploader(Config(serverUrl = "https://example.org", deviceId = "x", batchSize = 50), client)
+        uploader.upload(listOf(fix(0).copy(bearing = Double.NaN, speed = Double.POSITIVE_INFINITY), fix(1)))
+        val coords = Json.parseToJsonElement(body).jsonObject["location"]!!.jsonArray[0].jsonObject["coords"]!!.jsonObject
+        assertTrue("heading" !in coords && "speed" !in coords && "latitude" in coords, coords.toString())
+    }
+
+    /** A config saved by a newer SDK, with a key this one does not know, still loads (no tracker lost after a downgrade). */
+    @Test
+    fun aConfigWithAnUnknownKeyLoads() = runTest {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).also { drivers += it }
+        Database.Schema.create(driver)
+        Database(driver).configQueries.saveConfig("""{"serverUrl":"https://example.org","deviceId":"x","someNewKey":3}""")
+        assertEquals("x", ConfigStore(driver).load()?.deviceId)
+    }
 }
