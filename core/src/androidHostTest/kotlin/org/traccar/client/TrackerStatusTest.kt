@@ -5,7 +5,6 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
-import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.traccar.client.db.Database
@@ -71,7 +70,10 @@ class TrackerStatusTest {
         waitFor { trackerStatus.value.pending == 0 }
     }
 
-    /** A fix sets the time of the last fix, also one a heartbeat fetched; a heartbeat without a fix leaves it (no GPS). */
+    /**
+     * The last fix time is the fix's own time: a fix moves it, a heartbeat without a fix leaves it, a heartbeat with the
+     * phone's older cached location leaves it, one with a new fix moves it; a new start clears it.
+     */
     @Test
     fun lastFixTime() = runTest {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).also { drivers += it }
@@ -102,26 +104,35 @@ class TrackerStatusTest {
             scope = backgroundScope,
             now = { testScheduler.currentTime },
         )
-        waitFor { trackerStatus.value.pending == 0 }
+        waitFor { trackerStatus.value.enabled && trackerStatus.value.pending == 0 }
         assertEquals(null, trackerStatus.value.lastFixTime)
 
-        advanceTimeBy(5_000)
-        positions.emit(Position(latitude = 46.1, longitude = 24.15, accuracy = 5.0, time = 1_000))
-        waitFor { trackerStatus.value.lastFixTime != null }
-        val first = trackerStatus.value.lastFixTime!!
+        positions.emit(Position(latitude = 46.1, longitude = 24.15, accuracy = 5.0, time = 100_000))
+        waitFor { trackerStatus.value.lastFixTime == 100_000L }
 
-        // a heartbeat without a fix is kept and sent, but the last fix stays where it was
-        advanceTimeBy(60_000)
+        // a heartbeat without a fix is kept and sent, the last fix stays
         signals.emit(Signal.HeartbeatTick)
-        waitFor { (trackerStatus.value.lastPositionTime ?: 0) > 1_000 }
-        assertEquals(first, trackerStatus.value.lastFixTime)
+        waitFor { trackerStatus.value.lastPositionTime != 100_000L }
+        assertEquals(100_000L, trackerStatus.value.lastFixTime)
 
-        // a heartbeat that fetched a fix moves it
-        advanceTimeBy(60_000)
-        fix = Position(latitude = 46.2, longitude = 24.2, accuracy = 5.0, time = 2_000)
+        // a heartbeat with the cached older location: stays
+        fix = Position(latitude = 46.0, longitude = 24.0, accuracy = 5.0, time = 40_000)
         signals.emit(Signal.HeartbeatTick)
-        waitFor { (trackerStatus.value.lastFixTime ?: 0) > first }
-        assertTrue(trackerStatus.value.lastFixTime!! >= first + 120_000, "the heartbeat's own time")
+        waitFor { trackerStatus.value.lastPositionTime == 40_000L }
+        assertEquals(100_000L, trackerStatus.value.lastFixTime)
+
+        // a fix less than 30 s newer does not write the status; a later one does
+        positions.emit(Position(latitude = 46.1, longitude = 24.15, accuracy = 5.0, time = 110_000))
+        fix = Position(latitude = 46.2, longitude = 24.2, accuracy = 5.0, time = 200_000)
+        signals.emit(Signal.HeartbeatTick)
+        waitFor { trackerStatus.value.lastFixTime == 200_000L }
+
+        // stop and start: the last run's fix is not this run's
+        store.update { it.copy(enabled = false) }
+        waitFor { !trackerStatus.value.enabled }
+        store.update { it.copy(enabled = true) }
+        waitFor { trackerStatus.value.enabled }
+        assertEquals(null, trackerStatus.value.lastFixTime)
     }
 
     /** The queue and state store use Dispatchers.IO (real threads): wait a little for them, never forever. */

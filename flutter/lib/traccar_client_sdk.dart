@@ -156,9 +156,11 @@ class TrackerStatus {
   final double? lastLatitude;
   final double? lastLongitude;
 
-  /// When the phone last had a location fix (phone clock): any fix, kept or
-  /// dropped by the filter, or a heartbeat that carried one. A heartbeat
-  /// without a fix does not count, so an old time here means no GPS.
+  /// The time of the newest location fix (the fix's own time): any fix, kept
+  /// or dropped by the filter, or a heartbeat that carried one. A heartbeat
+  /// without a fix, or with an older cached location, does not move it, so an
+  /// old time here means no GPS. Moves in steps of at least 30 s; null until
+  /// the first fix after a start.
   final int? lastFixTime;
 
   /// The newest upload attempt and its HTTP status; 0 when there was no answer.
