@@ -25,6 +25,11 @@ data class TrackerStatus(
     /** The newest upload attempt and its HTTP status; 0 when there was no answer (no network, timeout). */
     val lastUploadTime: Long? = null,
     val lastUploadCode: Int? = null,
+    /** Positions wait to be sent and the phone has no network (the sync loop waits for it). */
+    val waitingForNetwork: Boolean = false,
+    /** The first of the uploads that got no answer (no network, timeout) since the last answer of any code; null
+     *  once a server answered. */
+    val noAnswerSince: Long? = null,
     /** The newest upload the server took (2xx). */
     val lastSentTime: Long? = null,
     /** Positions kept on the phone that the server has not taken yet; null until the queue was counted. */

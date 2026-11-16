@@ -59,6 +59,8 @@ class TraccarClientSdkPlugin :
                                 "lastUploadTime" to s.lastUploadTime,
                                 "lastUploadCode" to s.lastUploadCode,
                                 "lastSentTime" to s.lastSentTime,
+                                "waitingForNetwork" to s.waitingForNetwork,
+                                "noAnswerSince" to s.noAnswerSince,
                                 "pending" to s.pending,
                             ),
                         )
