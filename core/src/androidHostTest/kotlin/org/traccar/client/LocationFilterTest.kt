@@ -3,6 +3,7 @@ package org.traccar.client
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import kotlinx.coroutines.test.runTest
 import org.traccar.client.db.Database
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -10,8 +11,13 @@ import kotlin.test.assertNull
 /** The filter that decides which fixes are kept (time OR distance OR angle since the last kept one). */
 class LocationFilterTest {
 
+    private val drivers = mutableListOf<JdbcSqliteDriver>()
+
+    @AfterTest
+    fun close() = drivers.forEach { it.close() }
+
     private suspend fun filter(location: LocationConfig): LocationFilter {
-        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).also { drivers += it }
         Database.Schema.create(driver)
         val state = StateStore.create(driver)
         return LocationFilter(Config(serverUrl = "https://example.org", deviceId = "test", location = location), state)
