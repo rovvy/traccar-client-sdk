@@ -104,9 +104,63 @@ class LogEntry {
   final String message;
 }
 
+/// What the tracker is doing (Android). Times are epoch milliseconds.
+class TrackerStatus {
+  const TrackerStatus({
+    required this.enabled,
+    required this.paused,
+    this.lastPositionTime,
+    this.lastLatitude,
+    this.lastLongitude,
+    this.lastUploadTime,
+    this.lastUploadCode,
+    this.lastSentTime,
+    required this.pending,
+  });
+
+  factory TrackerStatus.fromMap(Map<Object?, Object?> m) => TrackerStatus(
+        enabled: m['enabled'] as bool? ?? false,
+        paused: m['paused'] as bool? ?? false,
+        lastPositionTime: (m['lastPositionTime'] as num?)?.toInt(),
+        lastLatitude: (m['lastLatitude'] as num?)?.toDouble(),
+        lastLongitude: (m['lastLongitude'] as num?)?.toDouble(),
+        lastUploadTime: (m['lastUploadTime'] as num?)?.toInt(),
+        lastUploadCode: (m['lastUploadCode'] as num?)?.toInt(),
+        lastSentTime: (m['lastSentTime'] as num?)?.toInt(),
+        pending: (m['pending'] as num?)?.toInt() ?? 0,
+      );
+
+  /// Tracking is on.
+  final bool enabled;
+
+  /// Stop detection paused the location updates (the phone stands still).
+  final bool paused;
+
+  /// The newest position the tracker kept (a fix that passed the filter, or a heartbeat).
+  final int? lastPositionTime;
+  final double? lastLatitude;
+  final double? lastLongitude;
+
+  /// The newest upload attempt and its HTTP status; 0 when there was no answer.
+  final int? lastUploadTime;
+  final int? lastUploadCode;
+
+  /// The newest upload the server took (2xx).
+  final int? lastSentTime;
+
+  /// Positions kept on the phone that the server has not taken yet.
+  final int pending;
+}
+
 /// Entry point for the Traccar Client SDK Flutter plugin.
 class TraccarClientSdk {
   static const MethodChannel _channel = MethodChannel('traccar_client_sdk');
+  static const EventChannel _statusChannel = EventChannel('traccar_client_sdk/status');
+
+  /// The tracker's status as it changes, the current one first. Android only for now.
+  Stream<TrackerStatus> get status => _statusChannel
+      .receiveBroadcastStream()
+      .map((e) => TrackerStatus.fromMap(e as Map<Object?, Object?>));
 
   /// Initializes the SDK with [config] if it isn't already initialized.
   /// Idempotent — subsequent calls return the existing tracker without

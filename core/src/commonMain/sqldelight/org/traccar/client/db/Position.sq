@@ -24,3 +24,6 @@ LIMIT 1;
 removeFirst:
 DELETE FROM Position
 WHERE id = (SELECT MIN(id) FROM Position);
+
+count:
+SELECT COUNT(*) FROM Position;

@@ -2,11 +2,14 @@ package org.traccar.traccar_client_sdk
 
 import android.content.Context
 import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -18,12 +21,15 @@ import org.traccar.client.NotificationConfig
 import org.traccar.client.requestPosition
 import org.traccar.client.sharedTracker
 import org.traccar.client.startTracking
+import org.traccar.client.trackerStatus
 
 class TraccarClientSdkPlugin :
     FlutterPlugin,
     MethodCallHandler {
 
     private lateinit var channel: MethodChannel
+    private lateinit var statusChannel: EventChannel
+    private var statusJob: Job? = null
     private lateinit var context: Context
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -31,6 +37,38 @@ class TraccarClientSdkPlugin :
         context = binding.applicationContext
         channel = MethodChannel(binding.binaryMessenger, "traccar_client_sdk")
         channel.setMethodCallHandler(this)
+        // the tracker's status as it changes (TrackerStatus); the first event is the current status
+        statusChannel = EventChannel(binding.binaryMessenger, "traccar_client_sdk/status")
+        statusChannel.setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+                statusJob?.cancel()
+                statusJob = scope.launch {
+                    // a tracker kept from an earlier run starts writing its status; a failure here only means no
+                    // tracker yet, and must not end the stream or crash the app
+                    try { sharedTracker() } catch (e: CancellationException) { throw e } catch (e: Throwable) { }
+                    trackerStatus.collect { s ->
+                        events.success(
+                            mapOf(
+                                "enabled" to s.enabled,
+                                "paused" to s.paused,
+                                "lastPositionTime" to s.lastPositionTime,
+                                "lastLatitude" to s.lastLatitude,
+                                "lastLongitude" to s.lastLongitude,
+                                "lastUploadTime" to s.lastUploadTime,
+                                "lastUploadCode" to s.lastUploadCode,
+                                "lastSentTime" to s.lastSentTime,
+                                "pending" to s.pending,
+                            ),
+                        )
+                    }
+                }
+            }
+
+            override fun onCancel(arguments: Any?) {
+                statusJob?.cancel()
+                statusJob = null
+            }
+        })
     }
 
     override fun onMethodCall(call: MethodCall, result: Result) {
@@ -73,6 +111,7 @@ class TraccarClientSdkPlugin :
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
+        statusChannel.setStreamHandler(null)
         scope.cancel()
     }
 
