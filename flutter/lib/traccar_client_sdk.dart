@@ -125,6 +125,7 @@ class TrackerStatus {
     this.lastPositionTime,
     this.lastLatitude,
     this.lastLongitude,
+    this.lastFixTime,
     this.lastUploadTime,
     this.lastUploadCode,
     this.lastSentTime,
@@ -137,6 +138,7 @@ class TrackerStatus {
         lastPositionTime: (m['lastPositionTime'] as num?)?.toInt(),
         lastLatitude: (m['lastLatitude'] as num?)?.toDouble(),
         lastLongitude: (m['lastLongitude'] as num?)?.toDouble(),
+        lastFixTime: (m['lastFixTime'] as num?)?.toInt(),
         lastUploadTime: (m['lastUploadTime'] as num?)?.toInt(),
         lastUploadCode: (m['lastUploadCode'] as num?)?.toInt(),
         lastSentTime: (m['lastSentTime'] as num?)?.toInt(),
@@ -153,6 +155,11 @@ class TrackerStatus {
   final int? lastPositionTime;
   final double? lastLatitude;
   final double? lastLongitude;
+
+  /// When the phone last had a location fix (phone clock): any fix, kept or
+  /// dropped by the filter, or a heartbeat that carried one. A heartbeat
+  /// without a fix does not count, so an old time here means no GPS.
+  final int? lastFixTime;
 
   /// The newest upload attempt and its HTTP status; 0 when there was no answer.
   final int? lastUploadTime;

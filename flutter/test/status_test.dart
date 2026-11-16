@@ -16,6 +16,7 @@ void main() {
           'lastPositionTime': 1700000000000,
           'lastLatitude': 45.8,
           'lastLongitude': 24.15,
+          'lastFixTime': 1700000000500,
           'lastUploadTime': 1700000001000,
           'lastUploadCode': 200,
           'lastSentTime': 1700000001000,
@@ -29,8 +30,10 @@ void main() {
     expect(events[0].lastLatitude, 45.8);
     expect(events[0].lastUploadCode, 200);
     expect(events[0].pending, 2);
+    expect(events[0].lastFixTime, 1700000000500);
     expect(events[1].enabled, isFalse);
     expect(events[1].lastSentTime, isNull);
     expect(events[1].pending, isNull);
+    expect(events[1].lastFixTime, isNull);
   });
 }

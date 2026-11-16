@@ -55,6 +55,7 @@ class TraccarClientSdkPlugin :
                                 "lastPositionTime" to s.lastPositionTime,
                                 "lastLatitude" to s.lastLatitude,
                                 "lastLongitude" to s.lastLongitude,
+                                "lastFixTime" to s.lastFixTime,
                                 "lastUploadTime" to s.lastUploadTime,
                                 "lastUploadCode" to s.lastUploadCode,
                                 "lastSentTime" to s.lastSentTime,

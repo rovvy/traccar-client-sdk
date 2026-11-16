@@ -125,7 +125,14 @@ class TrackerEngine internal constructor(
     }
 
     private suspend fun pipelineLoop() {
-        merge(locationSource.positions.onEach { lastIncoming.value = it to now() }, heartbeatPositions).collect { incoming ->
+        merge(
+            locationSource.positions.onEach { fix ->
+                val at = now()
+                lastIncoming.value = fix to at
+                if (fix.latitude != null && fix.longitude != null) updateStatus { it.copy(lastFixTime = at) }
+            },
+            heartbeatPositions,
+        ).collect { incoming ->
             if (!stateStore.state.value.enabled) return@collect
             var current: Position? = incoming
             for (processor in processors) {
@@ -134,7 +141,13 @@ class TrackerEngine internal constructor(
             val final = current ?: return@collect
             lastOutput.value = now()
             updateStatus {
-                it.copy(lastPositionTime = final.time, lastLatitude = final.latitude ?: it.lastLatitude, lastLongitude = final.longitude ?: it.lastLongitude)
+                it.copy(
+                    lastPositionTime = final.time,
+                    lastLatitude = final.latitude ?: it.lastLatitude,
+                    lastLongitude = final.longitude ?: it.lastLongitude,
+                    // a heartbeat that fetched its own fix (fetchOnce does not go through the positions flow)
+                    lastFixTime = if (final.heartbeat && final.latitude != null && final.longitude != null) now() else it.lastFixTime,
+                )
             }
             if (buffer) {
                 queue.enqueue(final)
