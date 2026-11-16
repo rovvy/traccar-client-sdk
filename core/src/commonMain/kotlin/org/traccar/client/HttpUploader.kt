@@ -33,11 +33,17 @@ class HttpUploader(
             config.headers.forEach { (name, value) -> headers.append(name, value) }
         }
         Log.log("Upload response ${response.status.value}")
-        response.status.isSuccess()
+        val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
+        val ok = response.status.isSuccess()
+        updateStatus {
+            it.copy(lastUploadTime = now, lastUploadCode = response.status.value, lastSentTime = if (ok) now else it.lastSentTime)
+        }
+        ok
     } catch (e: CancellationException) {
         throw e
     } catch (e: Throwable) {
         Log.log("Upload error: ${e.message}")
+        updateStatus { it.copy(lastUploadTime = kotlin.time.Clock.System.now().toEpochMilliseconds(), lastUploadCode = 0) }
         false
     }
 

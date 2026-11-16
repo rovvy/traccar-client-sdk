@@ -52,6 +52,15 @@ class TrackerEngine internal constructor(
         scope.launch { signalSources.map { it.signals }.merge().collect { handle(it) } }
         scope.launch { pipelineLoop() }
         scope.launch { syncLoop() }
+        scope.launch {
+            stateStore.state.collect { state -> updateStatus { it.copy(enabled = state.enabled, paused = state.paused) } }
+        }
+        scope.launch { refreshPending() }
+    }
+
+    private suspend fun refreshPending() {
+        val pending = queue.count()
+        updateStatus { it.copy(pending = pending) }
     }
 
     suspend fun handle(signal: Signal) = mutex.withLock {
@@ -116,8 +125,12 @@ class TrackerEngine internal constructor(
             }
             val final = current ?: return@collect
             lastOutput.value = now()
+            updateStatus {
+                it.copy(lastPositionTime = final.time, lastLatitude = final.latitude ?: it.lastLatitude, lastLongitude = final.longitude ?: it.lastLongitude)
+            }
             if (buffer) {
                 queue.enqueue(final)
+                refreshPending()
                 pipelineWakeUp.trySend(Unit)
             } else {
                 uploader.upload(final)
@@ -138,6 +151,7 @@ class TrackerEngine internal constructor(
                 }
                 uploader.upload(pending) -> {
                     queue.removeFirst()
+                    refreshPending()
                     backoff = initialBackoff
                 }
                 else -> {
