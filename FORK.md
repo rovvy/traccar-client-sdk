@@ -10,7 +10,8 @@ release (the Flutter plugin's `ios/traccar_client_sdk/Package.swift` points at t
 - `pubspec.yaml` in the app takes `traccar_client_sdk` from this repository (`path: flutter`, a fixed `ref`).
 - The app's `android/settings.gradle.kts` sees the `core/` folder next to the plugin and builds
   `org.traccar:traccar-client-sdk` from `:core` here (Gradle `includeBuild`), instead of downloading it from Maven Central.
-- Going back to the official SDK is one change in the app's `pubspec.yaml` (the pub.dev version).
+- Going back to the official SDK is one change in the app's `pubspec.yaml` (the pub.dev version). But a config saved with `batchSize` or `promptBatteryOptimization` (the app sets both) can't be read by the official SDK: after that update, tracking does not restart by itself (boot, app update) until the rider opens the app, whose `init` saves a config it can read. Plan that update for when no one is tracking.
+- iOS still uses the official framework (Swift builds `Config` with every argument). Building the iOS framework from this fork needs the two new arguments added in `TraccarClientSdkPlugin.swift`.
 
 ## Rules
 

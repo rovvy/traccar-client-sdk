@@ -149,7 +149,7 @@ class TrackerEngine internal constructor(
     private suspend fun syncLoop() {
         var backoff = initialBackoff
         while (currentCoroutineContext().isActive) {
-            val pending = queue.peek(batchSize.coerceAtLeast(1))
+            val pending = queue.peek(batchSize.coerceIn(1, MAX_BATCH))
             when {
                 pending.isEmpty() -> pipelineWakeUp.receive()
                 !network.isOnline.value -> {
@@ -158,7 +158,8 @@ class TrackerEngine internal constructor(
                     Log.log("Network restored")
                 }
                 else -> {
-                    val sent = uploader.upload(pending)
+                    // never more than was given: removing rows that were not sent would lose them
+                    val sent = uploader.upload(pending).coerceIn(0, pending.size)
                     if (sent > 0) {
                         queue.remove(sent)
                         refreshPending()
@@ -176,5 +177,8 @@ class TrackerEngine internal constructor(
     private companion object {
         /** A dropped fix older than this is not sent as a heartbeat: a new fix is asked for instead. */
         val RECENT_FIX = 1.minutes
+
+        /** At most this many in one request, whatever the config says (a server may keep fewer and still answer 2xx). */
+        const val MAX_BATCH = 500
     }
 }

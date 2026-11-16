@@ -106,15 +106,37 @@ class BatchUploadTest {
     /** A refused batch stays in the queue, whole, for the next try. */
     @Test
     fun aRefusedBatchStays() = runTest {
+        var tries = 0
         val s = engine(50, object : Uploader {
             override suspend fun upload(position: Position) = false
-            override suspend fun upload(positions: List<Position>) = 0
+            override suspend fun upload(positions: List<Position>): Int {
+                tries++
+                return 0
+            }
         })
         repeat(7) { s.positions.emit(fix(it)) }
         waitFor("7 wait") { runBlockingCount(s) == 7 }
         s.online.value = true
-        settle()
+        waitFor("an upload was tried") { tries >= 1 }
         assertEquals(7, s.queue.count(), "refused: all still there")
+    }
+
+    /** An uploader that claims more than it was given removes only what it was given: later positions stay. */
+    @Test
+    fun neverMoreRemovedThanSent() = runTest {
+        var calls = 0
+        val s = engine(5, object : Uploader {
+            override suspend fun upload(position: Position) = true
+            override suspend fun upload(positions: List<Position>): Int {
+                calls++
+                return if (calls == 1) 99 else 0
+            }
+        })
+        repeat(8) { s.positions.emit(fix(it)) }
+        waitFor("8 wait") { runBlockingCount(s) == 8 }
+        s.online.value = true
+        waitFor("a second try") { calls >= 2 }
+        assertEquals(3, s.queue.count(), "5 sent, 3 still waiting")
     }
 
     private fun runBlockingCount(s: Setup): Int = kotlinx.coroutines.runBlocking { s.queue.count() }
@@ -178,5 +200,8 @@ class BatchUploadTest {
         Database.Schema.create(driver)
         Database(driver).configQueries.saveConfig("""{"serverUrl":"https://example.org","deviceId":"x","someNewKey":3}""")
         assertEquals("x", ConfigStore(driver).load()?.deviceId)
+        // an unknown value (a newer accuracy) reads as no config, not a crash
+        Database(driver).configQueries.saveConfig("""{"serverUrl":"https://example.org","deviceId":"x","location":{"accuracy":"BALANCED"}}""")
+        assertEquals(null, ConfigStore(driver).load())
     }
 }

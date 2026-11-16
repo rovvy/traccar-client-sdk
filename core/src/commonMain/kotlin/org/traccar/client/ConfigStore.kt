@@ -18,9 +18,19 @@ class ConfigStore(driver: SqlDriver) {
     }
 
     suspend fun load(): Config? = withContext(Dispatchers.IO) {
-        // a key this version does not know (a newer SDK saved it) is skipped, so the tracker still starts after a
-        // downgrade instead of failing to read its config
-        queries.selectConfig().executeAsOneOrNull()?.let { lenient.decodeFromString(it) }
+        // a key this version does not know (a newer SDK saved it) is skipped; a config it still cannot read counts as
+        // none (logged), so a boot or an update never crashes on it; the app's next init saves a new one
+        queries.selectConfig().executeAsOneOrNull()?.let {
+            try {
+                lenient.decodeFromString<Config>(it)
+            } catch (e: kotlinx.serialization.SerializationException) {
+                Log.log("Saved config unreadable: ${e.message}")
+                null
+            } catch (e: IllegalArgumentException) {
+                Log.log("Saved config unreadable: ${e.message}")
+                null
+            }
+        }
     }
 
     suspend fun clear() = withContext(Dispatchers.IO) {
