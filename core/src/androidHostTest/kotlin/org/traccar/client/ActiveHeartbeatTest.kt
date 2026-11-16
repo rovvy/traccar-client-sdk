@@ -1,6 +1,7 @@
 package org.traccar.client
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,6 +22,7 @@ import kotlin.time.Duration.Companion.seconds
  * The active heartbeat (upstream issue #26): while not paused, a heartbeat tick (the Android alarm) sends a position
  * when nothing went out for the heartbeat interval, so a phone that wrongly left the stationary state is not silent.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class ActiveHeartbeatTest {
 
     private val drivers = mutableListOf<JdbcSqliteDriver>()
@@ -83,26 +85,41 @@ class ActiveHeartbeatTest {
             activeHeartbeat = heartbeat,
             now = { testScheduler.currentTime },
         )
-        runCurrent()
+        settle()
         return fakes
+    }
+
+    /**
+     * Runs what is due now. StateStore writes on Dispatchers.IO (a real thread), so the work that follows a
+     * write comes back to the test scheduler a moment later: wait a little real time and run again.
+     */
+    private fun TestScope.settle() {
+        repeat(10) {
+            runCurrent()
+            Thread.sleep(20)
+        }
+        runCurrent()
+    }
+
+    private suspend fun TestScope.fixNow(f: Fakes) {
+        f.positions.emit(fix(testScheduler.currentTime))
+        settle()
     }
 
     private suspend fun TestScope.tick(f: Fakes) {
         f.signals.emit(Signal.HeartbeatTick)
-        runCurrent()
+        settle()
     }
 
     /** The #26 case: moving state, fixes keep coming but the filter drops them (standing still); a tick sends one. */
     @Test
     fun droppedFixesStillGetAHeartbeat() = runTest {
         val f = engine(State(enabled = true, paused = false), 5.minutes)
-        f.positions.emit(fix(testScheduler.currentTime))
-        runCurrent()
+        fixNow(f)
         assertEquals(1, f.sent.size, "the first fix is kept")
         repeat(5) {
             advanceTimeBy(1.minutes)
-            f.positions.emit(fix(testScheduler.currentTime)) // same place: dropped by the 250 m rule
-            runCurrent()
+            fixNow(f) // same place: dropped by the 250 m rule
         }
         assertEquals(1, f.sent.size, "standing still: the filter drops them")
         tick(f)
@@ -126,8 +143,7 @@ class ActiveHeartbeatTest {
     fun recentOutputSkipsTheTick() = runTest {
         val f = engine(State(enabled = true, paused = false), 5.minutes)
         advanceTimeBy(4.minutes)
-        f.positions.emit(fix(testScheduler.currentTime))
-        runCurrent()
+        fixNow(f)
         advanceTimeBy(1.minutes)
         tick(f)
         assertEquals(1, f.sent.size, "only the fix itself")
@@ -142,11 +158,11 @@ class ActiveHeartbeatTest {
         advanceTimeBy(5.minutes)
         tick(f)
         advanceTimeBy(LOCATION_FETCH_TIMEOUT + 6.seconds)
-        runCurrent()
+        settle()
         assertEquals(1, f.sent.size, "a heartbeat without a fix")
         f.fetchHangs = false
         f.signals.emit(Signal.StationaryEnter)
-        runCurrent()
+        settle()
         tick(f)
         assertEquals(2, f.sent.size, "the engine still handles signals: paused heartbeat sent")
     }
