@@ -35,6 +35,24 @@ class LocationFilterTest {
         assertNotNull(f.process(fix(60)), "60 s after: kept")
     }
 
+    /** A fix that comes a little early is kept (up to a tenth of the interval, at most 1 s), so the gap does not double. */
+    @Test
+    fun aSlightlyEarlyFixIsKept() = runTest {
+        val f = filter(LocationConfig(intervalSeconds = 60, distanceMeters = 0))
+        assertNotNull(f.process(fix(0)))
+        assertNotNull(f.process(Position(latitude = 45.8, longitude = 24.15, accuracy = 5.0, time = 59_900)), "59.9 s: kept")
+        assertNull(f.process(Position(latitude = 45.8, longitude = 24.15, accuracy = 5.0, time = 59_900 + 58_000)), "58 s later: dropped")
+    }
+
+    /** A short interval gets a smaller tolerance: 5 s accepts from 4.5 s, not earlier. */
+    @Test
+    fun theToleranceIsATenthOfAShortInterval() = runTest {
+        val f = filter(LocationConfig(intervalSeconds = 5, distanceMeters = 0))
+        assertNotNull(f.process(fix(0)))
+        assertNull(f.process(Position(latitude = 45.8, longitude = 24.15, accuracy = 5.0, time = 4_400)), "4.4 s: dropped")
+        assertNotNull(f.process(Position(latitude = 45.8, longitude = 24.15, accuracy = 5.0, time = 4_500)), "4.5 s: kept")
+    }
+
     /** Distance: a fix 300 m away is kept before the interval is up. */
     @Test
     fun distanceKeepsAFarFixEarly() = runTest {

@@ -36,7 +36,7 @@ class LocationFilter(
             return position
         }
         val timeTrigger = locationConfig.intervalSeconds > 0 &&
-            (position.time - previous.time) >= locationConfig.intervalSeconds * 1000L
+            (position.time - previous.time) >= locationConfig.intervalSeconds * 1000L - intervalTolerance(locationConfig)
         val distanceTrigger = locationConfig.distanceMeters > 0 &&
             distance(previous, position) >= locationConfig.distanceMeters
         val angleTrigger = locationConfig.angleDegrees > 0 &&
@@ -73,5 +73,12 @@ class LocationFilter(
 
     private companion object {
         const val EARTH_RADIUS_METERS = 6_371_000.0
+
+        /**
+         * The platform is asked for a fix every interval, and the filter keeps a fix once an interval has passed.
+         * A fix that comes a little early (timing jitter) would miss the filter and the next kept one would come a
+         * whole interval later, doubling the gap. A tenth of the interval, at most one second, is accepted early.
+         */
+        fun intervalTolerance(config: LocationConfig): Long = (config.intervalSeconds * 100L).coerceAtMost(1000L)
     }
 }
