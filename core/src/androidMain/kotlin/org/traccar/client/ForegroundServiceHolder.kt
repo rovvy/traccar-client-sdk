@@ -84,6 +84,9 @@ class TrackerService : Service() {
         serviceScope.launch {
             sharedTracker()?.let { startInForeground(it.config.notification) }
         }
+        // the battery profiles switch by themselves while tracking runs (the engine outlives this service: a switch
+        // rebuilds the tracker, which restarts the service)
+        BatteryProfileEngine.start(this)
         // the notification follows the tracker's status by itself (noticeFor), also while the app sleeps or is closed;
         // the ticker catches a limit passing with no status change (no GPS after 10 min, no answer after 30 s). It
         // stops in deep sleep, but the heartbeat alarm (at least every 5 min while tracking) changes the status, and

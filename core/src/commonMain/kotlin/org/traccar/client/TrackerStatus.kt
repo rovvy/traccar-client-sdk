@@ -36,6 +36,8 @@ data class TrackerStatus(
     val lastSentTime: Long? = null,
     /** Positions kept on the phone that the server has not taken yet; null until the queue was counted. */
     val pending: Int? = null,
+    /** The battery profile in use ([Config.activeProfile]); null: none (the config's own interval). */
+    val profile: String? = null,
 )
 
 private val status = MutableStateFlow(TrackerStatus())

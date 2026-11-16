@@ -46,6 +46,45 @@ class NotificationConfig {
   Map<String, Object?> _toMap() => {'text': text};
 }
 
+/// A battery profile (Android): fewer location fixes while the battery is low.
+/// The SDK picks one by itself from the battery level, charging and battery
+/// saver, and runs with its interval and heartbeat. The lowest [enterPercent]
+/// that applies wins; charging means none at once; at least 10 minutes pass
+/// between two switches.
+class BatteryProfile {
+  const BatteryProfile({
+    required this.name,
+    required this.enterPercent,
+    required this.leavePercent,
+    required this.intervalSeconds,
+    required this.heartbeatIntervalSeconds,
+    this.withBatterySaver = false,
+  });
+
+  /// Shown in [TrackerStatus.profile].
+  final String name;
+
+  /// On at this battery level or lower, when not charging.
+  final int enterPercent;
+
+  /// Off again once the level is this or higher.
+  final int leavePercent;
+  final int intervalSeconds;
+  final int heartbeatIntervalSeconds;
+
+  /// On as well while battery saver is on (and not charging), at any level.
+  final bool withBatterySaver;
+
+  Map<String, Object?> _toMap() => {
+        'name': name,
+        'enterPercent': enterPercent,
+        'leavePercent': leavePercent,
+        'intervalSeconds': intervalSeconds,
+        'heartbeatIntervalSeconds': heartbeatIntervalSeconds,
+        'withBatterySaver': withBatterySaver,
+      };
+}
+
 /// Tracker configuration. Pass to [TraccarClientSdk.setConfig] to install or
 /// update.
 class Config {
@@ -60,6 +99,7 @@ class Config {
     this.notification = const NotificationConfig(),
     this.batchSize = 1,
     this.promptBatteryOptimization = true,
+    this.batteryProfiles = const [],
   });
 
   final String serverUrl;
@@ -94,6 +134,9 @@ class Config {
   /// app is not exempt. False when the app asks for it itself.
   final bool promptBatteryOptimization;
 
+  /// Android: fewer fixes while the battery is low; empty: off.
+  final List<BatteryProfile> batteryProfiles;
+
   Map<String, Object?> _toMap() => {
         'serverUrl': serverUrl,
         'headers': headers,
@@ -105,6 +148,7 @@ class Config {
         'notification': notification._toMap(),
         'batchSize': batchSize,
         'promptBatteryOptimization': promptBatteryOptimization,
+        'batteryProfiles': [for (final p in batteryProfiles) p._toMap()],
       };
 }
 
@@ -132,6 +176,7 @@ class TrackerStatus {
     this.waitingForNetwork,
     this.noAnswerSince,
     this.pending,
+    this.profile,
   });
 
   factory TrackerStatus.fromMap(Map<Object?, Object?> m) => TrackerStatus(
@@ -147,6 +192,7 @@ class TrackerStatus {
         waitingForNetwork: m['waitingForNetwork'] as bool?,
         noAnswerSince: (m['noAnswerSince'] as num?)?.toInt(),
         pending: (m['pending'] as num?)?.toInt(),
+        profile: m['profile'] as String?,
       );
 
   /// Tracking is on.
@@ -185,6 +231,10 @@ class TrackerStatus {
   /// Positions kept on the phone that the server has not taken yet; null
   /// until the SDK counted its queue.
   final int? pending;
+
+  /// The battery profile in use ([BatteryProfile.name]); null: none, the
+  /// config's own interval.
+  final String? profile;
 }
 
 /// Entry point for the Traccar Client SDK Flutter plugin.
