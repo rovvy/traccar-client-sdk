@@ -62,7 +62,7 @@ public class TraccarClientSdkPlugin: NSObject, FlutterPlugin {
         try await TrackerKt.sharedTracker()?.clearLogs()
         return nil
       }
-    case "updateNotification":
+    case "updateNotification", "setNoticeTexts", "clearNotification":
       // iOS shows no tracking notification
       result(false)
     default:

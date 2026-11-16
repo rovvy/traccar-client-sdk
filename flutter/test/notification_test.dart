@@ -19,4 +19,18 @@ void main() {
     answer = null;
     expect(await TraccarClientSdk().updateNotification(text: 'x'), isFalse);
   });
+
+  test('setNoticeTexts sends the wording; clearNotification gives the notification back to it', () async {
+    const channel = MethodChannel('traccar_client_sdk');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return true;
+    });
+    expect(await TraccarClientSdk().setNoticeTexts({'okTitle': 'Tracking on · last sent {time}'}), isTrue);
+    expect(calls.last.method, 'setNoticeTexts');
+    expect(calls.last.arguments, {'okTitle': 'Tracking on · last sent {time}'});
+    expect(await TraccarClientSdk().clearNotification(), isTrue);
+    expect(calls.last.method, 'clearNotification');
+  });
 }

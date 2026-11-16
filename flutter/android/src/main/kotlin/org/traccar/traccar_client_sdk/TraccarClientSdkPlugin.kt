@@ -109,6 +109,21 @@ class TraccarClientSdkPlugin :
                 val args = call.arguments as? Map<*, *>
                 result.success(updateTrackerNotification(context, args?.get("title") as? String, args?.get("text") as? String ?: ""))
             }
+            "setNoticeTexts" -> {
+                val a = call.arguments as? Map<*, *> ?: emptyMap<Any, Any>()
+                fun s(key: String) = a[key] as? String ?: ""
+                val texts = org.traccar.client.NoticeTexts(
+                    okTitle = s("okTitle"), okText = s("okText"),
+                    waitingTitle = s("waitingTitle"), waitingText = s("waitingText"),
+                    noInternetTitle = s("noInternetTitle"), noInternetText = s("noInternetText"),
+                    noInternetTextNone = s("noInternetTextNone"),
+                    noGpsTitle = s("noGpsTitle"), noGpsText = s("noGpsText"),
+                    silentTitle = s("silentTitle"), silentText = s("silentText"),
+                    refusedTitle = s("refusedTitle"), refusedText = s("refusedText"),
+                )
+                result.success(org.traccar.client.setTrackerNoticeTexts(context, texts))
+            }
+            "clearNotification" -> result.success(org.traccar.client.clearTrackerNotification(context))
             "clearLogs" -> scope.launchHandler(result) {
                 sharedTracker()?.clearLogs()
                 null

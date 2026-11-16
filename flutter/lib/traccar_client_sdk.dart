@@ -251,6 +251,25 @@ class TraccarClientSdk {
     return result ?? false;
   }
 
+  /// The tracking notification's wording per state (Android, our fork). From
+  /// then on the SDK keeps the notification current by itself from its own
+  /// status, also while the app sleeps or is closed: no internet (positions
+  /// wait), no GPS, refused, nothing sent, last sent, waiting for the first.
+  /// `{time}` in a text becomes a clock time. A text set with
+  /// [updateNotification] wins until [clearNotification]. Kept on the phone.
+  /// Returns false on iOS.
+  Future<bool> setNoticeTexts(Map<String, String> texts) async {
+    final result = await _channel.invokeMethod<bool>('setNoticeTexts', texts);
+    return result ?? false;
+  }
+
+  /// Drops the text set with [updateNotification]: the SDK's wording per
+  /// state shows again. Returns false on iOS.
+  Future<bool> clearNotification() async {
+    final result = await _channel.invokeMethod<bool>('clearNotification');
+    return result ?? false;
+  }
+
   /// Returns whether tracking is currently active.
   Future<bool> isTracking() async {
     final result = await _channel.invokeMethod<bool>('isTracking');
