@@ -12,6 +12,14 @@ data class Config(
     val preferPlatformProviders: Boolean = false,
     val notification: NotificationConfig = NotificationConfig(),
     val headers: Map<String, String> = emptyMap(),
+    /**
+     * Positions sent in one request when several wait in the buffer (after a time without network). 1: one request
+     * per position, as form fields (the OsmAnd protocol). More: a JSON request `{"device_id", "location": [...]}`
+     * (the Traccar Client JSON format) with up to this many, oldest first; the server must take that format.
+     */
+    val batchSize: Int = 1,
+    /** Android: on the first start, open the battery optimization list when the app is not exempt. */
+    val promptBatteryOptimization: Boolean = true,
 ) {
     constructor(serverUrl: String, deviceId: String) : this(serverUrl, deviceId, LocationConfig())
 }

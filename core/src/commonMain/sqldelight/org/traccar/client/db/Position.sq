@@ -21,6 +21,16 @@ FROM Position
 ORDER BY id ASC
 LIMIT 1;
 
+peekMany:
+SELECT latitude, longitude, accuracy, time, altitude, speed, bearing, battery, charging
+FROM Position
+ORDER BY id ASC
+LIMIT ?;
+
+removeMany:
+DELETE FROM Position
+WHERE id IN (SELECT id FROM Position ORDER BY id ASC LIMIT ?);
+
 removeFirst:
 DELETE FROM Position
 WHERE id = (SELECT MIN(id) FROM Position);

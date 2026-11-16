@@ -30,6 +30,8 @@ class TrackerEngine internal constructor(
     private val uploader: Uploader,
     private val buffer: Boolean,
     scope: CoroutineScope,
+    /** Positions sent in one request when several wait (Config.batchSize). */
+    private val batchSize: Int = 1,
     private val initialBackoff: Duration = 5.seconds,
     private val maxBackoff: Duration = 5.minutes,
     /**
@@ -147,23 +149,25 @@ class TrackerEngine internal constructor(
     private suspend fun syncLoop() {
         var backoff = initialBackoff
         while (currentCoroutineContext().isActive) {
-            val pending = queue.peek()
+            val pending = queue.peek(batchSize.coerceAtLeast(1))
             when {
-                pending == null -> pipelineWakeUp.receive()
+                pending.isEmpty() -> pipelineWakeUp.receive()
                 !network.isOnline.value -> {
                     Log.log("Offline, waiting for network")
                     network.isOnline.first { it }
                     Log.log("Network restored")
                 }
-                uploader.upload(pending) -> {
-                    queue.removeFirst()
-                    refreshPending()
-                    backoff = initialBackoff
-                }
                 else -> {
-                    Log.log("Upload failed, retrying in $backoff")
-                    delay(backoff)
-                    backoff = (backoff * 2).coerceAtMost(maxBackoff)
+                    val sent = uploader.upload(pending)
+                    if (sent > 0) {
+                        queue.remove(sent)
+                        refreshPending()
+                        backoff = initialBackoff
+                    } else {
+                        Log.log("Upload failed, retrying in $backoff")
+                        delay(backoff)
+                        backoff = (backoff * 2).coerceAtMost(maxBackoff)
+                    }
                 }
             }
         }

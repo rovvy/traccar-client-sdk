@@ -58,6 +58,8 @@ class Config {
     this.buffer = true,
     this.preferPlatformProviders = false,
     this.notification = const NotificationConfig(),
+    this.batchSize = 1,
+    this.promptBatteryOptimization = true,
   });
 
   final String serverUrl;
@@ -83,6 +85,15 @@ class Config {
 
   final NotificationConfig notification;
 
+  /// Android: positions sent in one request when several wait in the buffer.
+  /// 1 sends each as form fields (OsmAnd); more sends a JSON request with
+  /// up to this many (Traccar Client JSON format), which the server must take.
+  final int batchSize;
+
+  /// Android: on the first start, open the battery optimization list when the
+  /// app is not exempt. False when the app asks for it itself.
+  final bool promptBatteryOptimization;
+
   Map<String, Object?> _toMap() => {
         'serverUrl': serverUrl,
         'headers': headers,
@@ -92,6 +103,8 @@ class Config {
         'buffer': buffer,
         'preferPlatformProviders': preferPlatformProviders,
         'notification': notification._toMap(),
+        'batchSize': batchSize,
+        'promptBatteryOptimization': promptBatteryOptimization,
       };
 }
 

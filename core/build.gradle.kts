@@ -67,6 +67,7 @@ kotlin {
         }
         getByName("androidHostTest").dependencies {
             implementation(libs.sqldelight.sqlite.driver)
+            implementation(libs.ktor.client.mock)
         }
     }
 }
