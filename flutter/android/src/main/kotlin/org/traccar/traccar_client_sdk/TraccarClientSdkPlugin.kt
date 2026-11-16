@@ -22,6 +22,7 @@ import org.traccar.client.requestPosition
 import org.traccar.client.sharedTracker
 import org.traccar.client.startTracking
 import org.traccar.client.trackerStatus
+import org.traccar.client.updateTrackerNotification
 
 class TraccarClientSdkPlugin :
     FlutterPlugin,
@@ -100,6 +101,10 @@ class TraccarClientSdkPlugin :
                 sharedTracker()?.getLogs()?.map {
                     mapOf("time" to it.time, "message" to it.message)
                 } ?: emptyList<Map<String, Any>>()
+            }
+            "updateNotification" -> {
+                val args = call.arguments as? Map<*, *>
+                result.success(updateTrackerNotification(context, args?.get("title") as? String, args?.get("text") as? String ?: ""))
             }
             "clearLogs" -> scope.launchHandler(result) {
                 sharedTracker()?.clearLogs()

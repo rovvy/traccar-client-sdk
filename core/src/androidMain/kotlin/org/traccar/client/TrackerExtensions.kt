@@ -28,6 +28,13 @@ suspend fun Tracker.requestPosition(context: Context, alarm: String? = null): Bo
     return requestPosition(alarm)
 }
 
+/**
+ * Sets the tracking notification's [title] and [text] while tracking runs (a status the app keeps current, say the
+ * time of the last position sent). The config's notification text is used again after a stop. True when shown.
+ */
+fun updateTrackerNotification(context: Context, title: String?, text: String): Boolean =
+    TrackerService.update(context, title, text)
+
 private fun promptBatteryOptimization(context: Context) {
     val powerManager = context.getSystemService<PowerManager>() ?: return
     if (powerManager.isIgnoringBatteryOptimizations(context.packageName)) return
