@@ -3,7 +3,7 @@ name: Tests
 # Our fork only (FORK.md): the Kotlin unit tests of core on every push and pull request.
 on:
   push:
-    branches: [master]
+    branches: [main]
   pull_request:
 
 concurrency:

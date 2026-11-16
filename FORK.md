@@ -14,10 +14,10 @@ release (the Flutter plugin's `ios/traccar_client_sdk/Package.swift` points at t
 
 ## Rules
 
-- `master` is the official code plus our changes. Each change is one pull request here, small, with Kotlin tests
+- `main` is the official code plus our changes. Each change is one pull request here, small, with Kotlin tests
   where it has rules, and is offered upstream as its own pull request from a branch off the official release tag.
 - A change upstream accepts is dropped from our list below at the next merge.
-- An official release: merge its tag into `master`, run the tests, bump the app's `ref`, check on a phone.
+- An official release: merge its tag into `main`, run the tests, bump the app's `ref`, check on a phone.
 
 ## Our changes (against the official 1.1.4)
 
