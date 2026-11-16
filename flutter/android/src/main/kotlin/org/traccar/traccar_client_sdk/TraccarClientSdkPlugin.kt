@@ -84,10 +84,8 @@ class TraccarClientSdkPlugin :
                 null
             }
             "setConfig" -> scope.launchHandler(result) {
-                val tracker = sharedTracker()!!
-                // the battery profile in use stays (the SDK chose it); the app's config does not carry it
-                val given = parseConfig(call.arguments as Map<*, *>)
-                tracker.updateConfig(given.copy(activeProfile = tracker.config.activeProfile?.takeIf { name -> given.batteryProfiles.any { it.name == name } }))
+                // the battery profile in use stays (Tracker.updateConfig keeps it)
+                sharedTracker()!!.updateConfig(parseConfig(call.arguments as Map<*, *>))
                 null
             }
             "start" -> scope.launchHandler(result) {

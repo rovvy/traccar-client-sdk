@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.PowerManager
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import kotlinx.coroutines.CancellationException
@@ -17,6 +18,7 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
@@ -37,16 +39,18 @@ internal object BatteryProfileEngine {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
-    /** When the profile last changed (0: not yet in this process, so the first choice applies at once). */
-    private var sinceMs = 0L
+    /** When the profile last changed, in time since boot ([SystemClock.elapsedRealtime]). */
+    private var sinceMs = -HOLD_MS
 
     @Synchronized
     fun start(context: Context) {
         if (job?.isActive == true) return
         val app = context.applicationContext
+        // a new run: the first choice applies at once (the profile the last run ended in is not held)
+        sinceMs = -HOLD_MS
         job = scope.launch {
             val ticker = flow { while (true) { emit(Unit); delay(60_000) } }
-            merge(ticker, changes(app), trackerStatus.map { it.enabled }).conflate().collect {
+            merge(ticker, changes(app), trackerStatus.map { it.enabled }.distinctUntilChanged()).conflate().collect {
                 try {
                     if (!check(app)) throw StopEngine()
                 } catch (e: StopEngine) {
@@ -57,7 +61,17 @@ internal object BatteryProfileEngine {
                     Log.log("Battery profile check failed: $e")
                 }
             }
-        }.also { j -> j.invokeOnCompletion { synchronized(this) { if (job === j) job = null } } }
+        }.also { j ->
+            j.invokeOnCompletion {
+                synchronized(this) { if (job === j) job = null }
+                // tracking was started again while this run was ending (a quick Stop and Start): a new run, after a
+                // pause so a status that is late to say "off" cannot loop
+                scope.launch {
+                    delay(5_000)
+                    if (sharedTracker()?.state?.value?.enabled == true) start(app)
+                }
+            }
+        }
     }
 
     private class StopEngine : CancellationException("tracking stopped")
@@ -68,12 +82,12 @@ internal object BatteryProfileEngine {
         if (!tracker.state.value.enabled) return false
         val config = tracker.config
         if (config.batteryProfiles.isEmpty() && config.activeProfile == null) return true
-        val now = System.currentTimeMillis()
+        // the time since boot, not the clock: a clock set back would hold the profile for hours
+        val now = SystemClock.elapsedRealtime()
         val target = chooseBatteryProfile(config.batteryProfiles, config.activeProfile, read(context), sinceMs, now, HOLD_MS)
         if (target == config.activeProfile) return true
-        Log.log("Battery profile ${config.activeProfile ?: "none"} -> ${target ?: "none"}")
         sinceMs = now
-        tracker.updateConfig(config.copy(activeProfile = target))
+        switchBatteryProfile(target)
         return true
     }
 
