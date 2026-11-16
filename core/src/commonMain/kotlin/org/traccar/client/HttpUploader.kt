@@ -17,6 +17,7 @@ import io.ktor.http.Parameters
 import io.ktor.http.isSuccess
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.round
+import kotlin.time.TimeSource
 
 class HttpUploader(
     private val config: Config,
@@ -67,28 +68,34 @@ class HttpUploader(
         return if (ok) positions.size else 0
     }
 
-    /** One request: the log line `Upload response NNN` (apps read it), the status, and false on any error. */
-    private suspend fun send(request: suspend () -> HttpResponse): Boolean = try {
-        val response = request()
-        Log.log("Upload response ${response.status.value}")
-        val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
-        val ok = response.status.isSuccess()
-        updateStatus {
-            it.copy(
-                lastUploadTime = now,
-                lastUploadCode = response.status.value,
-                lastSentTime = if (ok) now else it.lastSentTime,
-                noAnswerSince = null,
-            )
+    /**
+     * One request: the log line `Upload response NNN in N ms` (apps read the code after "Upload response "; the time
+     * on the monotonic clock, so a change of the phone's clock does not show in it), the status, and false on any error.
+     */
+    private suspend fun send(request: suspend () -> HttpResponse): Boolean {
+        val started = TimeSource.Monotonic.markNow()
+        return try {
+            val response = request()
+            Log.log("Upload response ${response.status.value} in ${started.elapsedNow().inWholeMilliseconds} ms")
+            val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
+            val ok = response.status.isSuccess()
+            updateStatus {
+                it.copy(
+                    lastUploadTime = now,
+                    lastUploadCode = response.status.value,
+                    lastSentTime = if (ok) now else it.lastSentTime,
+                    noAnswerSince = null,
+                )
+            }
+            ok
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            Log.log("Upload error after ${started.elapsedNow().inWholeMilliseconds} ms: ${e.message}")
+            val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
+            updateStatus { it.copy(lastUploadTime = now, lastUploadCode = 0, noAnswerSince = it.noAnswerSince ?: now) }
+            false
         }
-        ok
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Throwable) {
-        Log.log("Upload error: ${e.message}")
-        val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
-        updateStatus { it.copy(lastUploadTime = now, lastUploadCode = 0, noAnswerSince = it.noAnswerSince ?: now) }
-        false
     }
 
     // A value that is not a finite number is left out: JSON has no NaN, and one would make the whole batch unreadable

@@ -114,7 +114,8 @@ private suspend fun install(koin: Koin, config: Config): Tracker {
     koin.declare(config.applied())
     koin.declare(GivenConfig(config))
     updateStatus { it.copy(profile = config.activeProfile?.takeIf { name -> config.batteryProfiles.any { p -> p.name == name } }) }
-    if (config.activeProfile != null) Log.log("Battery profile ${config.activeProfile}: interval ${config.applied().location.intervalSeconds} s")
+    // the settings in force, each time a tracker is built (init, a new config, a restart after a reboot)
+    Log.log(config.applied().describe() + (config.activeProfile?.let { ", battery profile $it" } ?: ""))
     if (!config.location.stopDetection) {
         stateStore.update { it.copy(paused = false) }
     }
