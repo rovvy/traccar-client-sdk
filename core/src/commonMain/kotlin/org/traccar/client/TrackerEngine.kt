@@ -61,9 +61,12 @@ class TrackerEngine internal constructor(
         scope.launch {
             stateStore.state.collect { state ->
                 updateStatus {
-                    // a new start does not inherit the last fix of the run before (the status is one per process)
-                    val fix = if (state.enabled && !it.enabled) null else it.lastFixTime
-                    it.copy(enabled = state.enabled, paused = state.paused, lastFixTime = fix)
+                    // a new start does not inherit the run before's fix or failed sends (the status is one per process)
+                    if (state.enabled && !it.enabled) {
+                        it.copy(enabled = true, paused = state.paused, lastFixTime = null, noAnswerSince = null)
+                    } else {
+                        it.copy(enabled = state.enabled, paused = state.paused)
+                    }
                 }
             }
         }
@@ -175,7 +178,12 @@ class TrackerEngine internal constructor(
                 pending.isEmpty() -> pipelineWakeUp.receive()
                 !network.isOnline.value -> {
                     Log.log("Offline, waiting for network")
-                    network.isOnline.first { it }
+                    updateStatus { it.copy(waitingForNetwork = true) }
+                    try {
+                        network.isOnline.first { it }
+                    } finally {
+                        updateStatus { it.copy(waitingForNetwork = false) }
+                    }
                     Log.log("Network restored")
                 }
                 else -> {

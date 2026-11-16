@@ -18,6 +18,10 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.traccar.client.db.Database
 import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -29,6 +33,10 @@ class BatchUploadTest {
 
     @AfterTest
     fun close() = drivers.forEach { it.close() }
+
+    // the status is one per process: other tests leave theirs behind
+    @BeforeTest
+    fun reset() = resetStatus()
 
     private fun fix(i: Int) = Position(latitude = 45.8 + i / 1000.0, longitude = 24.15, accuracy = 5.0, time = 1_700_000_000_000 + i * 60_000L)
 
@@ -137,6 +145,36 @@ class BatchUploadTest {
         s.online.value = true
         waitFor("a second try") { calls >= 2 }
         assertEquals(3, s.queue.count(), "5 sent, 3 still waiting")
+    }
+
+    /** The status says when positions wait for the network, and stops saying it once the network is back. */
+    @Test
+    fun waitingForNetworkInTheStatus() = runTest {
+        val s = engine(50, object : Uploader {
+            override suspend fun upload(position: Position) = true
+            override suspend fun upload(positions: List<Position>) = positions.size
+        })
+        assertFalse(trackerStatus.value.waitingForNetwork, "nothing waits yet")
+        s.positions.emit(fix(0))
+        waitFor("offline with a position: waiting for the network") { trackerStatus.value.waitingForNetwork }
+        s.online.value = true
+        waitFor("online: sent and no longer waiting") { !trackerStatus.value.waitingForNetwork && runBlockingCount(s) == 0 }
+    }
+
+    /** Uploads with no answer keep the time of the first of them; any server answer, also a refusal, clears it. */
+    @Test
+    fun noAnswerSinceInTheStatus() = runTest {
+        var answer: HttpStatusCode? = null
+        val client = HttpClient(MockEngine { _ -> respond("{}", answer ?: error("no network")) })
+        val uploader = HttpUploader(Config(serverUrl = "https://example.org", deviceId = "x", batchSize = 50), client)
+        assertEquals(0, uploader.upload(listOf(fix(0))))
+        val first = assertNotNull(trackerStatus.value.noAnswerSince)
+        Thread.sleep(5)
+        uploader.upload(listOf(fix(0)))
+        assertEquals(first, trackerStatus.value.noAnswerSince, "the first of the run")
+        answer = HttpStatusCode.ServiceUnavailable
+        uploader.upload(listOf(fix(0)))
+        assertNull(trackerStatus.value.noAnswerSince, "the server answered")
     }
 
     private fun runBlockingCount(s: Setup): Int = kotlinx.coroutines.runBlocking { s.queue.count() }

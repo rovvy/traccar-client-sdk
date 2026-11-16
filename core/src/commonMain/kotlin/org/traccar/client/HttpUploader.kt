@@ -74,14 +74,20 @@ class HttpUploader(
         val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
         val ok = response.status.isSuccess()
         updateStatus {
-            it.copy(lastUploadTime = now, lastUploadCode = response.status.value, lastSentTime = if (ok) now else it.lastSentTime)
+            it.copy(
+                lastUploadTime = now,
+                lastUploadCode = response.status.value,
+                lastSentTime = if (ok) now else it.lastSentTime,
+                noAnswerSince = null,
+            )
         }
         ok
     } catch (e: CancellationException) {
         throw e
     } catch (e: Throwable) {
         Log.log("Upload error: ${e.message}")
-        updateStatus { it.copy(lastUploadTime = kotlin.time.Clock.System.now().toEpochMilliseconds(), lastUploadCode = 0) }
+        val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
+        updateStatus { it.copy(lastUploadTime = now, lastUploadCode = 0, noAnswerSince = it.noAnswerSince ?: now) }
         false
     }
 

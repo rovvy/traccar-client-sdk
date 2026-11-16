@@ -129,6 +129,8 @@ class TrackerStatus {
     this.lastUploadTime,
     this.lastUploadCode,
     this.lastSentTime,
+    this.waitingForNetwork,
+    this.noAnswerSince,
     this.pending,
   });
 
@@ -142,6 +144,8 @@ class TrackerStatus {
         lastUploadTime: (m['lastUploadTime'] as num?)?.toInt(),
         lastUploadCode: (m['lastUploadCode'] as num?)?.toInt(),
         lastSentTime: (m['lastSentTime'] as num?)?.toInt(),
+        waitingForNetwork: m['waitingForNetwork'] as bool?,
+        noAnswerSince: (m['noAnswerSince'] as num?)?.toInt(),
         pending: (m['pending'] as num?)?.toInt(),
       );
 
@@ -169,6 +173,14 @@ class TrackerStatus {
 
   /// The newest upload the server took (2xx).
   final int? lastSentTime;
+
+  /// Positions wait to be sent and the phone has no network. null when the
+  /// SDK does not say (an older build).
+  final bool? waitingForNetwork;
+
+  /// The first of the uploads that got no answer (no network, timeout) since
+  /// the last answer of any code; null once a server answered.
+  final int? noAnswerSince;
 
   /// Positions kept on the phone that the server has not taken yet; null
   /// until the SDK counted its queue.
