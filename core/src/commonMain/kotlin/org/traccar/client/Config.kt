@@ -59,13 +59,19 @@ val LocationConfig.effective: LocationConfig
     }
 
 /**
- * One log line with the settings that decide how often the phone takes and sends a position, for support: `Config:
- * HIGH, interval 60 s, distance 0 m, stop detection 180 s, heartbeat 300 s, batch 50`. The server address and the
- * device ID are left out (the start's own line has them).
+ * One log line with the settings that decide how often the phone takes and sends a position, as the SDK uses them
+ * (interval and distance after [effective], the batch within 1 to 500), for support: `Config: HIGH, interval 60 s,
+ * distance 0 m, stop detection 180 s, heartbeat 300 s, batch 50`. An angle, the platform provider and a wake lock are
+ * named only when set; the server address and the device ID are left out (the start's own line has them).
  */
 fun Config.describe(): String {
     val l = location
-    val stop = if (l.stopDetection) "stop detection ${l.stopTimeoutSeconds} s" else "stop detection off"
-    return "Config: ${l.accuracy}, interval ${l.intervalSeconds} s, distance ${l.distanceMeters} m, " +
-        "$stop, heartbeat ${l.heartbeatIntervalSeconds} s, batch $batchSize" + if (buffer) "" else ", no buffer"
+    val e = l.effective
+    val stop = if (l.stopDetection) "stop detection ${l.stopTimeoutSeconds} s, radius ${l.stationaryRadiusMeters} m" else "stop detection off"
+    return "Config: ${l.accuracy}, interval ${e.intervalSeconds} s, distance ${e.distanceMeters} m, $stop, " +
+        "heartbeat ${l.heartbeatIntervalSeconds} s, batch ${batchSize.coerceIn(1, TrackerEngine.MAX_BATCH)}" +
+        (if (l.angleDegrees > 0) ", angle ${l.angleDegrees}°" else "") +
+        (if (preferPlatformProviders) ", platform provider" else "") +
+        (if (wakeLock) ", wake lock" else "") +
+        (if (buffer) "" else ", no buffer")
 }
