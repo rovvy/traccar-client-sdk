@@ -203,6 +203,19 @@ class TraccarClientSdk {
     return result ?? false;
   }
 
+  /// Android: shows [title] and [text] in the tracking notification while
+  /// tracking runs (the whole text, also on the lock screen; a tap opens the
+  /// app). After a stop the config's notification text is used again. Returns
+  /// false when tracking is not running or notifications are not allowed, and
+  /// always on iOS, which has no tracking notification.
+  Future<bool> updateNotification({String? title, required String text}) async {
+    final result = await _channel.invokeMethod<bool>(
+      'updateNotification',
+      {'title': title, 'text': text},
+    );
+    return result ?? false;
+  }
+
   /// Returns whether tracking is currently active.
   Future<bool> isTracking() async {
     final result = await _channel.invokeMethod<bool>('isTracking');

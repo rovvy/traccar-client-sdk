@@ -63,6 +63,7 @@ kotlin {
 }
 
 dependencies {
-    implementation("org.traccar:traccar-client-sdk:1.1.4")
+    // api: an app's own Kotlin can call the core too (updateTrackerNotification from an Activity)
+    api("org.traccar:traccar-client-sdk:1.1.4")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 }
