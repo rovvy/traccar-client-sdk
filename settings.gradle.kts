@@ -17,4 +17,8 @@ dependencyResolutionManagement {
 rootProject.name = "traccar-client-sdk"
 
 include(":core")
-include(":samples:android")
+// The sample app only when this repository is built on its own: an app that builds the SDK from source
+// (Gradle includeBuild, TransyTrail) needs only :core.
+if (gradle.parent == null) {
+    include(":samples:android")
+}
