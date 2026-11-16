@@ -63,6 +63,16 @@ class BatchUploadTest {
         return setup
     }
 
+    /** Runs until [condition] holds, waiting real time for the IO threads in between; at most about 10 s. */
+    private fun TestScope.waitFor(what: String, condition: () -> Boolean) {
+        repeat(2000) {
+            runCurrent()
+            if (condition()) return
+            Thread.sleep(5)
+        }
+        assertTrue(condition(), what)
+    }
+
     /** The queue and state store write on Dispatchers.IO (real threads): run, wait a little real time, run again. */
     private fun TestScope.settle() {
         repeat(15) {
@@ -84,14 +94,13 @@ class BatchUploadTest {
             }
         })
         repeat(120) { s.positions.emit(fix(it)) }
-        settle()
-        assertEquals(120, s.queue.count(), "offline: all wait")
+        waitFor("offline: all 120 wait") { runBlockingCount(s) == 120 }
         s.online.value = true
-        settle()
+        waitFor("sent in batches") { calls.sumOf { it.size } == 120 }
         assertEquals(listOf(50, 50, 20), calls.map { it.size })
         assertEquals(fix(0).time, calls[0][0].time, "oldest first")
         assertEquals(fix(119).time, calls[2].last().time)
-        assertEquals(0, s.queue.count())
+        waitFor("queue empty") { runBlockingCount(s) == 0 }
     }
 
     /** A refused batch stays in the queue, whole, for the next try. */
@@ -102,11 +111,13 @@ class BatchUploadTest {
             override suspend fun upload(positions: List<Position>) = 0
         })
         repeat(7) { s.positions.emit(fix(it)) }
-        settle()
+        waitFor("7 wait") { runBlockingCount(s) == 7 }
         s.online.value = true
         settle()
-        assertEquals(7, s.queue.count())
+        assertEquals(7, s.queue.count(), "refused: all still there")
     }
+
+    private fun runBlockingCount(s: Setup): Int = kotlinx.coroutines.runBlocking { s.queue.count() }
 
     /** The JSON request: device_id, and each position with ISO time, coords, speed in m/s, battery level 0-1. */
     @Test
