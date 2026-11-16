@@ -1,5 +1,6 @@
 package org.traccar.client
 
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import org.koin.core.module.Module
@@ -25,7 +26,8 @@ internal fun coreModule(): Module = module {
             processors = listOf(get<LocationFilter>(), get()),
             uploader = get(),
             buffer = get<Config>().buffer,
-            scope = get(),
+            scope = get<ComponentCoroutineScope>(),
+            activeHeartbeat = get<Config>().location.heartbeatIntervalSeconds.seconds,
         )
     }
 
