@@ -61,4 +61,16 @@ class TrackerNoticeTest {
         assertEquals("Not taken" to "See details.", on(old.copy(lastUploadCode = 403, lastUploadTime = now - min)))
         assertEquals("Nothing sent since m80", on(old.copy(lastUploadCode = 0, lastUploadTime = now - min))!!.first)
     }
+
+    /** A new start does not take the run before's uploads: it waits, then counts nothing sent from the start. */
+    @Test
+    fun aNewStart() {
+        val restarted = TrackerStatus(enabled = true, startedAt = now - 3 * min, lastSentTime = now - 90 * min,
+            lastUploadCode = 503, lastUploadTime = now - 90 * min, pending = 0)
+        assertEquals("Waiting for the first position", on(restarted)!!.first)
+        val long = restarted.copy(startedAt = now - 12 * min)
+        assertEquals("Nothing sent since m88", on(long)!!.first, "counted from the start")
+        assertEquals("Not taken", on(long.copy(lastUploadCode = 403, lastUploadTime = now - min))!!.first)
+        assertEquals("Tracking on · last sent m99", on(long.copy(lastSentTime = now - min))!!.first)
+    }
 }

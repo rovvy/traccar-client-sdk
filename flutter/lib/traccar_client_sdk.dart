@@ -255,10 +255,12 @@ class TraccarClientSdk {
   /// then on the SDK keeps the notification current by itself from its own
   /// status, also while the app sleeps or is closed: no internet (positions
   /// wait), no GPS, refused, nothing sent, last sent, waiting for the first.
-  /// `{time}` in a text becomes a clock time. A text set with
+  /// `{time}` in a text becomes a clock time; every text is needed (a missing
+  /// or empty one throws). `limitMinutes` (default 10) and `noAnswerSeconds`
+  /// (default 30) are numbers. A text set with
   /// [updateNotification] wins until [clearNotification]. Kept on the phone.
   /// Returns false on iOS.
-  Future<bool> setNoticeTexts(Map<String, String> texts) async {
+  Future<bool> setNoticeTexts(Map<String, Object> texts) async {
     final result = await _channel.invokeMethod<bool>('setNoticeTexts', texts);
     return result ?? false;
   }

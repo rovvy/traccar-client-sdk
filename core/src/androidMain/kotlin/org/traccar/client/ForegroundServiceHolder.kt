@@ -85,7 +85,9 @@ class TrackerService : Service() {
             sharedTracker()?.let { startInForeground(it.config.notification) }
         }
         // the notification follows the tracker's status by itself (noticeFor), also while the app sleeps or is closed;
-        // the ticker catches a limit passing with no status change (no GPS after 10 min, no answer after 30 s)
+        // the ticker catches a limit passing with no status change (no GPS after 10 min, no answer after 30 s). It
+        // stops in deep sleep, but the heartbeat alarm (at least every 5 min while tracking) changes the status, and
+        // failed sends retry and change it, so the notification still moves on with the screen off
         if (notices?.isActive != true) notices = serviceScope.launch {
             val ticker = flow { while (true) { emit(Unit); delay(30_000) } }
             merge(trackerStatus, ticker).collect { refresh(this@TrackerService) }

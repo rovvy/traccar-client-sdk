@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.update
 data class TrackerStatus(
     /** Tracking is on. */
     val enabled: Boolean = false,
+    /** When tracking was last switched on (in this process); uploads before it belong to the run before. */
+    val startedAt: Long? = null,
     /** Stop detection paused the location updates (the phone stands still). */
     val paused: Boolean = false,
     /** The newest position the tracker kept (a fix that passed the filter, or a heartbeat). */

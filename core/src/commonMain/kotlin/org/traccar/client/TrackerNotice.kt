@@ -41,7 +41,9 @@ data class NoticeTexts(
 fun noticeFor(status: TrackerStatus, texts: NoticeTexts, now: Long, clock: (Long) -> String): Pair<String, String>? {
     if (!status.enabled) return null
     val limit = texts.limitMinutes * 60_000L
-    val sent = status.lastSentTime
+    // what happened before the latest start belongs to the run before (the status is one per process)
+    val started = status.startedAt ?: 0L
+    val sent = status.lastSentTime?.takeIf { it >= started }
     val recent = sent != null && now - sent <= limit
     fun at(template: String, time: Long) = template.replace("{time}", clock(time))
 
@@ -51,11 +53,11 @@ fun noticeFor(status: TrackerStatus, texts: NoticeTexts, now: Long, clock: (Long
     }
     val fix = status.lastFixTime
     if (recent && fix != null && now - fix > limit) return at(texts.noGpsTitle, fix) to texts.noGpsText
-    if (sent == null) return texts.waitingTitle to texts.waitingText
-    if (!recent) {
-        val code = status.lastUploadCode
-        val refused = code != null && code != 0 && code !in 200..299 && (status.lastUploadTime ?: 0) > sent
-        return if (refused) texts.refusedTitle to texts.refusedText else at(texts.silentTitle, sent) to texts.silentText
-    }
-    return at(texts.okTitle, sent) to texts.okText
+    if (recent) return at(texts.okTitle, sent!!) to texts.okText
+    // nothing taken for over the limit since the last one, or since the start: refused when the server answered
+    // otherwise since then, else nothing sent; a fresh start waits for its first one
+    val since = sent ?: status.startedAt?.takeIf { now - it > limit } ?: return texts.waitingTitle to texts.waitingText
+    val code = status.lastUploadCode
+    val refused = code != null && code != 0 && code !in 200..299 && (status.lastUploadTime ?: 0) > since
+    return if (refused) texts.refusedTitle to texts.refusedText else at(texts.silentTitle, since) to texts.silentText
 }
