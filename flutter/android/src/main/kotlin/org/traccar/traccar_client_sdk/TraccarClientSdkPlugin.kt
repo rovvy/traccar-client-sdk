@@ -139,6 +139,29 @@ class TraccarClientSdkPlugin :
                 result.success(org.traccar.client.setTrackerNoticeTexts(context, texts))
             }
             "clearNotification" -> result.success(org.traccar.client.clearTrackerNotification(context))
+            "setSchedule" -> {
+                val a = call.arguments as? Map<*, *> ?: emptyMap<Any, Any>()
+                org.traccar.client.setTrackingSchedule(
+                    context,
+                    (a["startAt"] as? Number)?.toLong(),
+                    (a["stopAt"] as? Number)?.toLong(),
+                    a["noticeTitle"] as? String ?: "",
+                    a["noticeText"] as? String ?: "",
+                )
+                result.success(true)
+            }
+            "canStartInBackground" -> result.success(org.traccar.client.canStartTrackingInBackground(context))
+            "openExactAlarmSettings" -> {
+                if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) {
+                    result.success(false)
+                    return
+                }
+                val intent = android.content.Intent(
+                    android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                    android.net.Uri.parse("package:" + context.packageName),
+                ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                result.success(runCatching { context.startActivity(intent) }.isSuccess)
+            }
             "clearLogs" -> scope.launchHandler(result) {
                 sharedTracker()?.clearLogs()
                 null

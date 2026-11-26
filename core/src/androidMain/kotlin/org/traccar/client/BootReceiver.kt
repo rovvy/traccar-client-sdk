@@ -17,6 +17,8 @@ class BootReceiver : BroadcastReceiver() {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 sharedTracker()
+                // alarms are gone after a reboot and an app update: the schedule sets its next one again
+                handleScheduleAfterRestart(context.applicationContext)
             } finally {
                 pending.finish()
             }
