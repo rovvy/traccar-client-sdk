@@ -11,6 +11,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- the tracking schedule: an exact alarm wakes the phone at the start time and lets the app start tracking then -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <application>
         <provider
@@ -32,6 +34,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
         <receiver
@@ -42,6 +45,9 @@
             android:exported="false" />
         <receiver
             android:name=".HeartbeatReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".ScheduleReceiver"
             android:exported="false" />
     </application>
 

@@ -65,6 +65,9 @@ public class TraccarClientSdkPlugin: NSObject, FlutterPlugin {
     case "updateNotification", "setNoticeTexts", "clearNotification":
       // iOS shows no tracking notification
       result(false)
+    case "setSchedule", "canStartInBackground", "openExactAlarmSettings":
+      // iOS never lets an app start location tracking by itself: the app reminds the rider instead
+      result(false)
     default:
       result(FlutterMethodNotImplemented)
     }

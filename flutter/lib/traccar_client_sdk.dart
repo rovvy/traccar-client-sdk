@@ -322,6 +322,35 @@ class TraccarClientSdk {
     return result ?? false;
   }
 
+  /// Android (our fork): starts tracking at [start] and stops it at [stop] by
+  /// itself (null for none), also while the app is closed, after an app update
+  /// and after a reboot. A start happens once: a rider who then stops by hand
+  /// is not started again. Needs a tracker set up before ([init]). When the
+  /// phone does not let the app start tracking from the background
+  /// ([canStartInBackground] false), the start time shows a notice with
+  /// [noticeTitle] and [noticeText]; a tap opens the app. Both null clears the
+  /// schedule. Returns false on iOS, which never starts tracking by itself.
+  Future<bool> setSchedule({DateTime? start, DateTime? stop, String noticeTitle = '', String noticeText = ''}) async {
+    final result = await _channel.invokeMethod<bool>('setSchedule', {
+      'startAt': start?.millisecondsSinceEpoch,
+      'stopAt': stop?.millisecondsSinceEpoch,
+      'noticeTitle': noticeTitle,
+      'noticeText': noticeText,
+    });
+    return result ?? false;
+  }
+
+  /// Android: whether a scheduled start can happen with the app closed
+  /// ("Alarms and reminders" allowed on Android 12 and up, and location allowed
+  /// all the time). False on iOS.
+  Future<bool> canStartInBackground() async =>
+      await _channel.invokeMethod<bool>('canStartInBackground') ?? false;
+
+  /// Android 12 and up: opens the phone's "Alarms and reminders" page for the
+  /// app. False when there is none (older Android, iOS).
+  Future<bool> openExactAlarmSettings() async =>
+      await _channel.invokeMethod<bool>('openExactAlarmSettings') ?? false;
+
   /// Returns whether tracking is currently active.
   Future<bool> isTracking() async {
     final result = await _channel.invokeMethod<bool>('isTracking');
