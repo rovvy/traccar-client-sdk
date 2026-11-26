@@ -17,6 +17,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -43,13 +45,20 @@ private data class KeptSchedule(val schedule: TrackingSchedule, val noticeTitle:
 fun setTrackingSchedule(context: Context, startAtMs: Long?, stopAtMs: Long?, noticeTitle: String = "", noticeText: String = "") {
     val app = context.applicationContext
     val kept = KeptSchedule(TrackingSchedule(startAtMs, stopAtMs), noticeTitle, noticeText)
-    save(app, kept)
-    Log.log("Schedule set: start ${startAtMs ?: "none"}, stop ${stopAtMs ?: "none"}")
-    if (kept.schedule.isEmpty) {
-        alarmManager(app)?.cancel(alarmIntent(app))
-        return
+    // a start notice still up is old news once the app hands over its schedule (it does so when it opens)
+    app.getSystemService<NotificationManager>()?.cancel(NOTICE_ID)
+    CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+        scheduleLock.withLock {
+            save(app, kept)
+            Log.log("Schedule set: start ${startAtMs ?: "none"}, stop ${stopAtMs ?: "none"}")
+            if (kept.schedule.isEmpty) {
+                clear(app)
+                alarmManager(app)?.cancel(alarmIntent(app))
+            } else {
+                handleDueLocked(app)
+            }
+        }
     }
-    runDue(app)
 }
 
 /** The schedule kept on the phone (empty when none). */
@@ -71,22 +80,28 @@ private fun hasBackgroundLocation(context: Context): Boolean =
     hasPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) &&
         (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || hasPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION))
 
-/** After a reboot or an app update: what was due meanwhile happens now, and the next alarm is set again. */
+/**
+ * After a reboot, an app update, or a change of the "Alarms and reminders" permission: what was due meanwhile happens
+ * now, and the next alarm is set again (exact once the permission allows it).
+ */
 internal suspend fun handleScheduleAfterRestart(app: Context) {
     if (load(app) != null) handleDue(app)
 }
 
-/** Handles what is due now (in the background) and sets the alarm for what comes next. */
-private fun runDue(app: Context) {
-    CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { handleDue(app) }
-}
+/** One at a time: an alarm, a boot and a new schedule from the app never overwrite each other's schedule. */
+private val scheduleLock = Mutex()
 
-internal suspend fun handleDue(app: Context) {
+internal suspend fun handleDue(app: Context) = scheduleLock.withLock { handleDueLocked(app) }
+
+private suspend fun handleDueLocked(app: Context) {
+    val tracker = sharedTracker()
+    // read after the tracker, which can take a moment: the schedule as it is now
     val kept = load(app) ?: return
     val now = System.currentTimeMillis()
-    val tracker = sharedTracker()
     if (tracker == null) {
+        // nothing can start without a tracker yet: the alarm stays set, so the next one tries again
         Log.log("Schedule: no tracker set up, nothing done")
+        arm(app, kept.schedule.nextAt(now))
         return
     }
     when (kept.schedule.stepAt(now, tracker.state.value.enabled)) {
@@ -127,7 +142,7 @@ private fun showNotice(app: Context, kept: KeptSchedule) {
     if (kept.noticeText.isBlank() || !TrackerService.hasNotificationPermission(app)) return
     val manager = app.getSystemService<NotificationManager>() ?: return
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && manager.getNotificationChannel(CHANNEL_ID) == null) {
-        manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Tracking start", NotificationManager.IMPORTANCE_HIGH))
+        manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, kept.noticeTitle.ifBlank { "Tracking start" }, NotificationManager.IMPORTANCE_HIGH))
     }
     val open = app.packageManager.getLaunchIntentForPackage(app.packageName)?.let {
         PendingIntent.getActivity(app, 1, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
