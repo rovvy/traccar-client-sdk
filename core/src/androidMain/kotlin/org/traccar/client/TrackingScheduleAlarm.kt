@@ -47,18 +47,11 @@ fun setTrackingSchedule(context: Context, startAtMs: Long?, stopAtMs: Long?, not
     val kept = KeptSchedule(TrackingSchedule(startAtMs, stopAtMs), noticeTitle, noticeText)
     // a start notice still up is old news once the app hands over its schedule (it does so when it opens)
     app.getSystemService<NotificationManager>()?.cancel(NOTICE_ID)
-    CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-        scheduleLock.withLock {
-            save(app, kept)
-            Log.log("Schedule set: start ${startAtMs ?: "none"}, stop ${stopAtMs ?: "none"}")
-            if (kept.schedule.isEmpty) {
-                clear(app)
-                alarmManager(app)?.cancel(alarmIntent(app))
-            } else {
-                handleDueLocked(app)
-            }
-        }
-    }
+    // saved at once, in call order; the work runs after, under the lock, and reads the schedule as it is then, so the
+    // last call's schedule is the one that ends up armed whatever order the work runs in
+    if (kept.schedule.isEmpty) clear(app) else save(app, kept)
+    Log.log("Schedule set: start ${startAtMs ?: "none"}, stop ${stopAtMs ?: "none"}")
+    CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { handleDue(app) }
 }
 
 /** The schedule kept on the phone (empty when none). */
@@ -66,9 +59,11 @@ fun trackingSchedule(context: Context): TrackingSchedule = load(context.applicat
 
 /**
  * Whether tracking can start from the background at the start time: the alarm can wake the phone on time and lets the
- * app start its tracking service (Android 12 and up: "Alarms and reminders"), and location is allowed all the time.
+ * app start its tracking service (Android 12 and up: "Alarms and reminders"), location is allowed all the time, and the
+ * service may show its notification (Android 13 and up), without which it is not kept running.
  */
-fun canStartTrackingInBackground(context: Context): Boolean = canScheduleExact(context) && hasBackgroundLocation(context)
+fun canStartTrackingInBackground(context: Context): Boolean =
+    canScheduleExact(context) && hasBackgroundLocation(context) && TrackerService.hasNotificationPermission(context.applicationContext)
 
 /** Android 12 and up: whether "Alarms and reminders" is allowed for the app (always true before). */
 fun canScheduleExact(context: Context): Boolean {
@@ -95,9 +90,9 @@ internal suspend fun handleDue(app: Context) = scheduleLock.withLock { handleDue
 
 private suspend fun handleDueLocked(app: Context) {
     val tracker = sharedTracker()
-    // read after the tracker, which can take a moment: the schedule as it is now
-    val kept = load(app) ?: return
+    // read after the tracker, which can take a moment: the schedule as it is now (none: no alarm)
     val now = System.currentTimeMillis()
+    val kept = load(app) ?: return arm(app, null)
     if (tracker == null) {
         // nothing can start without a tracker yet: the alarm stays set, so the next one tries again
         Log.log("Schedule: no tracker set up, nothing done")
